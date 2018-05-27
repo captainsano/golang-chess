@@ -7,14 +7,15 @@ This project is an attempt to incrementally port python-chess to golang, for lea
 
 ** Progress
 
-- Core [0/7] 
-  - [ ] Colors
-  - [ ] Piece Types
-  - [ ] Squares
+- Core [5/8] 
+  - [x] Colors
+  - [x] Piece Types
+  - [x] Squares
   - [ ] Pieces
   - [ ] Moves
   - [ ] Board
-  - [ ] Square Sets
+  - [x] Bitboard functions
+  - [x] Square Sets
 - PGN Parsing and Writing [0/6]
   - [ ] Parsing
   - [ ] Writing
