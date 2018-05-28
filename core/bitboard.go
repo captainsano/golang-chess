@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math/bits"
 	"strings"
 )
 
@@ -142,6 +143,14 @@ func MakeBitboardFromRankIndex(i uint8) Bitboard {
 	return Bitboard(0xff << (8 * i))
 }
 
+func (b Bitboard) Lsb() int {
+	return bits.Len(uint(b&-b)) - 1
+}
+
+func (b Bitboard) Msb() int {
+	return bits.Len64(uint64(b)) - 1
+}
+
 func (a Bitboard) IsMaskingBB(b Bitboard) bool {
 	return (uint64(a) & uint64(b)) > 0
 }
@@ -263,28 +272,58 @@ func SlidingAttacks(square Square, occupied Bitboard, deltas []int) Bitboard {
 }
 
 // ------- Bitboard utility functions --------
+var knightAttacks = func() []Bitboard {
+	bbs := []Bitboard{}
+	for i := Square(0); i < 64; i++ {
+		bbs = append(bbs, SlidingAttacks(i, BBAll, []int{17, 15, 10, 6, -17, -15, -10, -6}))
+	}
+	return bbs
+}()
+
 func KnightAttacks(s Square) Bitboard {
-	return SlidingAttacks(s, BBAll, []int{
-		17, 15, 10, 6, -17, -15, -10, -6,
-	})
+	return knightAttacks[s]
 }
+
+var kingAttacks = func() []Bitboard {
+	bbs := []Bitboard{}
+	for i := Square(0); i < 64; i++ {
+		bbs = append(bbs, SlidingAttacks(i, BBAll, []int{9, 8, 7, 1, -9, -8, -7, -1}))
+	}
+	return bbs
+}()
 
 func KingAttacks(s Square) Bitboard {
-	return SlidingAttacks(s, BBAll, []int{
-		9, 8, 7, 1, -9, -8, -7, -1,
-	})
+	return kingAttacks[s]
 }
 
-func PawnAttacks(s Square, c Color) Bitboard {
-	if c == White {
-		return SlidingAttacks(s, BBAll, []int{7, 9})
+var pawnAttacks = func() [][]Bitboard {
+	bbsWhite := []Bitboard{}
+	for i := Square(0); i < 64; i++ {
+		bbsWhite = append(bbsWhite, SlidingAttacks(i, BBAll, []int{7, 9}))
 	}
 
-	return SlidingAttacks(s, BBAll, []int{-7, -9})
+	bbsBlack := []Bitboard{}
+	for i := Square(0); i < 64; i++ {
+		bbsBlack = append(bbsBlack, SlidingAttacks(i, BBAll, []int{-7, -9}))
+	}
+
+	return [][]Bitboard{bbsBlack, bbsWhite}
+}()
+
+func PawnAttacks(s Square, c Color) Bitboard {
+	return pawnAttacks[c][s]
 }
 
+var edges = func() []Bitboard {
+	bbs := []Bitboard{}
+	for i := Square(0); i < 64; i++ {
+		bbs = append(bbs, (((BBRank1 | BBRank8) & ^BBRank(i.Rank())) | ((BBFileA | BBFileH) & ^BBFile(i.File()))))
+	}
+	return bbs
+}()
+
 func Edges(s Square) Bitboard {
-	return ((BBRank1 | BBRank8) & ^BBRank(s.Rank())) | ((BBFileA | BBFileH) & ^BBFile(s.File()))
+	return edges[s]
 }
 
 func CarryRippler(mask Bitboard) chan Bitboard {
@@ -324,69 +363,32 @@ func AttackTable(deltas []int) ([]Bitboard, []map[Bitboard]Bitboard) {
 	return maskTable, attackTable
 }
 
-var diagMasks []Bitboard
+var diagMasks, diagAttacks = func() ([]Bitboard, []map[Bitboard]Bitboard) { return AttackTable([]int{-9, -7, 7, 9}) }()
 
-func DiagMask(s Square) Bitboard {
-	if diagMasks != nil {
-		return diagMasks[s]
-	}
-
-	diagMasks, _ = AttackTable([]int{-9, -7, 7, 9})
+func DiagMasks(s Square) Bitboard {
 	return diagMasks[s]
 }
 
-var diagAttacks []map[Bitboard]Bitboard
-
 func DiagAttacks(s Square) map[Bitboard]Bitboard {
-	if diagAttacks != nil {
-		return diagAttacks[s]
-	}
-
-	_, diagAttacks = AttackTable([]int{-9, -7, 7, 9})
 	return diagAttacks[s]
 }
 
-var fileMasks []Bitboard
+var fileMasks, fileAttacks = func() ([]Bitboard, []map[Bitboard]Bitboard) { return AttackTable([]int{-8, 8}) }()
 
-func FileMask(s Square) Bitboard {
-	if fileMasks != nil {
-		return fileMasks[s]
-	}
-
-	fileMasks, _ = AttackTable([]int{-8, 8})
+func FileMasks(s Square) Bitboard {
 	return fileMasks[s]
 }
 
-var fileAttacks []map[Bitboard]Bitboard
-
-func FileAttack(s Square) map[Bitboard]Bitboard {
-	if fileAttacks != nil {
-		return fileAttacks[s]
-	}
-
-	_, fileAttacks = AttackTable([]int{-8, 8})
+func FileAttacks(s Square) map[Bitboard]Bitboard {
 	return fileAttacks[s]
 }
 
-var rankMasks []Bitboard
+var rankMasks, rankAttacks = func() ([]Bitboard, []map[Bitboard]Bitboard) { return AttackTable([]int{-1, 1}) }()
 
-func RankMask(s Square) Bitboard {
-	if rankMasks != nil {
-		return rankMasks[s]
-	}
-
-	rankMasks, _ = AttackTable([]int{-1, 1})
+func RankMasks(s Square) Bitboard {
 	return rankMasks[s]
 }
-
-var rankAttacks []map[Bitboard]Bitboard
-
-func RankAttack(s Square) map[Bitboard]Bitboard {
-	if rankAttacks != nil {
-		return rankAttacks[s]
-	}
-
-	_, rankAttacks = AttackTable([]int{-1, 1})
+func RankAttacks(s Square) map[Bitboard]Bitboard {
 	return rankAttacks[s]
 }
 
@@ -403,15 +405,15 @@ func Rays() ([][]Bitboard, [][]Bitboard) {
 		for b := Square(0); b < 64; b++ {
 			bbB := BBSquare(b)
 
-			if DiagAttacks(a)[0].IsMaskingBB(bbB) {
-				rays_row = append(rays_row, ((DiagAttacks(a)[0] & DiagAttacks(b)[0]) | bbA | bbB))
-				between_row = append(between_row, (DiagAttacks(a)[DiagMask(a)&bbB] & DiagAttacks(b)[DiagMask(b)&bbA]))
-			} else if RankAttack(a)[0].IsMaskingBB(bbB) {
-				rays_row = append(rays_row, RankAttack(a)[0]|bbA)
-				between_row = append(between_row, RankAttack(a)[RankMask(a)&bbB]&RankAttack(b)[RankMask(b)&bbA])
-			} else if FileAttack(a)[0].IsMaskingBB(bbB) {
-				rays_row = append(rays_row, FileAttack(a)[0]|bbA)
-				between_row = append(between_row, FileAttack(a)[FileMask(a)&bbB]&FileAttack(b)[FileMask(b)&bbA])
+			if diagAttacks[a][0].IsMaskingBB(bbB) {
+				rays_row = append(rays_row, ((diagAttacks[a][0] & diagAttacks[b][0]) | bbA | bbB))
+				between_row = append(between_row, (diagAttacks[a][diagMasks[a]&bbB] & diagAttacks[b][diagMasks[b]&bbA]))
+			} else if rankAttacks[a][0].IsMaskingBB(bbB) {
+				rays_row = append(rays_row, (rankAttacks[a][0] | bbA))
+				between_row = append(between_row, (rankAttacks[a][rankMasks[a]&bbB] & rankAttacks[b][rankMasks[b]&bbA]))
+			} else if fileAttacks[a][0].IsMaskingBB(bbB) {
+				rays_row = append(rays_row, (fileAttacks[a][0] | bbA))
+				between_row = append(between_row, (fileAttacks[a][fileMasks[a]&bbB] & fileAttacks[b][fileMasks[b]&bbA]))
 			} else {
 				rays_row = append(rays_row, 0)
 				between_row = append(between_row, 0)

@@ -27,3 +27,11 @@ func (c Color) Name() string {
 
 	panic("Cannot get name for color")
 }
+
+func (c Color) Swap() Color {
+	if c == White {
+		return Black
+	}
+
+	return White
+}
