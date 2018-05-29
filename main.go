@@ -3,20 +3,31 @@ package main
 import (
 	"fmt"
 
-	"github.com/captainsano/golang-chess/core"
+	. "github.com/captainsano/golang-chess/core"
 )
 
-func main() {
-	rays, between := core.Rays()
+var rays, between = Rays()
 
-	from := core.A1
-	to := core.A5
+func printAttacks(from, to Square) {
+	x := rays[from][to]
 
-	fmt.Println("Rays: ")
-	fmt.Println(rays[from][to].Ascii())
-
+	fmt.Println("--> ", from.Name(), " to ", to.Name())
+	fmt.Println(x.Ascii())
 	fmt.Println()
+}
+
+func printBetween(from, to Square) {
+	x := between[from][to]
+
+	fmt.Println("--> ", from.Name(), " to ", to.Name())
+	fmt.Println(x.Ascii())
+	fmt.Println()
+}
+
+func main() {
+	fmt.Println("Attacks: ")
+	printAttacks(B1, G1)
 
 	fmt.Println("Between: ")
-	fmt.Println(between[from][to].Ascii())
+	printBetween(B1, G1)
 }

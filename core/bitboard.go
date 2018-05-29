@@ -120,7 +120,7 @@ func BBFile(f File) Bitboard {
 }
 
 func BBSquare(s Square) Bitboard {
-	return 1 << s.Index()
+	return MakeBitboardFromSquare(s)
 }
 
 func MakeBitboard(b uint64) Bitboard {
@@ -351,7 +351,7 @@ func AttackTable(deltas []int) ([]Bitboard, []map[Bitboard]Bitboard) {
 	for sq := Square(0); sq < 64; sq++ {
 		attacks := make(map[Bitboard]Bitboard)
 
-		mask := SlidingAttacks(sq, BBVoid, deltas) & Edges(sq)
+		mask := SlidingAttacks(sq, BBVoid, deltas) & ^Edges(sq)
 		for subset := range CarryRippler(mask) {
 			attacks[subset] = SlidingAttacks(sq, subset, deltas)
 		}
@@ -397,13 +397,13 @@ func Rays() ([][]Bitboard, [][]Bitboard) {
 	between := [][]Bitboard{}
 
 	for a := Square(0); a < 64; a++ {
-		bbA := BBSquare(a)
+		bbA := MakeBitboardFromSquare(a)
 
 		rays_row := []Bitboard{}
 		between_row := []Bitboard{}
 
 		for b := Square(0); b < 64; b++ {
-			bbB := BBSquare(b)
+			bbB := MakeBitboardFromSquare(b)
 
 			if diagAttacks[a][0].IsMaskingBB(bbB) {
 				rays_row = append(rays_row, ((diagAttacks[a][0] & diagAttacks[b][0]) | bbA | bbB))
