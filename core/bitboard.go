@@ -147,8 +147,46 @@ func (b Bitboard) Lsb() int {
 	return bits.Len(uint(b&-b)) - 1
 }
 
+func (b Bitboard) ScanForward() chan int {
+	ch := make(chan int)
+
+	go func(mask Bitboard) {
+		for {
+			if mask == BBVoid {
+				close(ch)
+				break
+			}
+
+			r := b & -b
+			ch <- bits.Len(uint(r)) - 1
+			mask ^= r
+		}
+	}(b)
+
+	return ch
+}
+
 func (b Bitboard) Msb() int {
 	return bits.Len64(uint64(b)) - 1
+}
+
+func (b Bitboard) ScanReversed() chan int {
+	ch := make(chan int)
+
+	go func(mask Bitboard) {
+		for {
+			if mask == BBVoid {
+				close(ch)
+				break
+			}
+
+			r := bits.Len64(uint64(b)) - 1
+			ch <- r
+			mask ^= MakeBitboardFromSquareIndex(uint8(r))
+		}
+	}(b)
+
+	return ch
 }
 
 func (a Bitboard) IsMaskingBB(b Bitboard) bool {
@@ -426,3 +464,5 @@ func Rays() ([][]Bitboard, [][]Bitboard) {
 
 	return rays, between
 }
+
+var bbRays, bbBetween = Rays()

@@ -1,9 +1,12 @@
 package core
 
-type FEN string
+import (
+	"strconv"
+	"strings"
+)
 
 const (
-	StartingFEN FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	StartingFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 )
 
 type Board struct {
@@ -21,10 +24,10 @@ type Board struct {
 }
 
 const (
-	StartingBoardFEN FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+	StartingBoardFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
 )
 
-func MakeBoard(fen FEN) Board {
+func MakeBoard(fen string) Board {
 	b := Board{}
 	b.occupiedColor = []Bitboard{BBVoid, BBVoid}
 
@@ -198,13 +201,311 @@ func (b *Board) Attackers(c Color, s Square) Bitboard {
 }
 
 func (b *Board) PinMask(c Color, s Square) Bitboard {
+	kingSq := b.King(c)
+	if kingSq == nil {
+		return BBAll
+	}
+
+	squareMask := MakeBitboardFromSquare(s)
+
+	ks := [][]map[Bitboard]Bitboard{fileAttacks, rankAttacks, diagAttacks}
+	vs := []Bitboard{b.rooks | b.queens, b.rooks | b.queens, b.bishops | b.queens}
+
+	for i, _ := range ks {
+		attacks, sliders := ks[i], vs[i]
+
+		rays := attacks[*kingSq][0]
+		if rays.IsMaskingBB(squareMask) {
+			snipers := rays & sliders & b.occupiedColor[c.Swap()]
+			for sniper := range snipers.ScanReversed() {
+				if bbBetween[sniper][*kingSq]&(b.occupied|squareMask) == squareMask {
+					return bbRays[*kingSq][sniper]
+				}
+			}
+
+			break
+		}
+	}
+
 	return BBAll
 }
 
-func (b *Board) Pin(c Color, s Square) Bitboard {
-	return BBVoid
+func (b *Board) IsPinned(c Color, s Square) bool {
+	return b.PinMask(c, s) != BBAll
 }
 
-func (b *Board) SetFEN(fen FEN) {
+func (b *Board) RemovePieceAt(s Square) Piece {
+	pt := b.PieceTypeAt(s)
+	mask := MakeBitboardFromSquare(s)
 
+	var color Color
+	if b.occupiedColor[White].IsMaskingBB(mask) {
+		color = White
+	} else if b.occupiedColor[Black].IsMaskingBB(mask) {
+		color = Black
+	}
+
+	switch pt {
+	case Pawn:
+		b.pawns ^= mask
+	case Knight:
+		b.knights ^= mask
+	case Bishop:
+		b.bishops ^= mask
+	case Rook:
+		b.rooks ^= mask
+	case Queen:
+		b.queens ^= mask
+	case King:
+		b.kings ^= mask
+	default:
+		return MakePiece(pt, color)
+	}
+
+	b.occupied ^= mask
+	b.occupiedColor[White] &= ^mask
+	b.occupiedColor[Black] &= ^mask
+
+	b.promoted &= ^mask
+
+	return MakePiece(pt, color)
+}
+
+func (b *Board) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
+	b.RemovePieceAt(s)
+
+	mask := MakeBitboardFromSquare(s)
+
+	switch pt {
+	case Pawn:
+		b.pawns |= mask
+	case Knight:
+		b.knights |= mask
+	case Bishop:
+		b.bishops |= mask
+	case Rook:
+		b.rooks |= mask
+	case Queen:
+		b.queens |= mask
+	case King:
+		b.kings |= mask
+	}
+
+	b.occupied ^= mask
+	b.occupiedColor[c] ^= mask
+
+	if promoted {
+		b.promoted ^= mask
+	}
+}
+
+func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
+	if p != nil {
+		b._setPieceAt(s, p.Type, p.Color, promoted)
+	} else {
+		b.RemovePieceAt(s)
+	}
+}
+
+func (b *Board) FEN(promoted bool) string {
+	builder := []string{}
+	empty := 0
+
+	for _, square := range squares180 {
+		piece := b.PieceAt(square)
+
+		if piece == nil {
+			empty += 1
+		} else {
+			if empty > 0 {
+				builder = append(builder, string(empty))
+				empty = 0
+			}
+
+			builder = append(builder, piece.Symbol())
+
+			if promoted && MakeBitboardFromSquare(square).IsMaskingBB(b.promoted) {
+				builder = append(builder, "~")
+			}
+		}
+
+		if MakeBitboardFromSquare(square).IsMaskingBB(BBFileH) {
+			if empty > 0 {
+				builder = append(builder, string(empty))
+				empty = 0
+			}
+
+			if square != H1 {
+				builder = append(builder, "/")
+			}
+		}
+	}
+
+	return strings.Join(builder, "")
+}
+
+func (b *Board) SetFEN(fen string) {
+	fen = strings.TrimSpace(fen)
+	if strings.Contains(fen, " ") {
+		panic("expected position part of fen, got multiple parts")
+	}
+
+	// Ensure the FEN is valid
+	rows := strings.Split(fen, "/")
+	if len(rows) != 8 {
+		panic("expected 8 rows in position part of fen")
+	}
+
+	fenNumbers := map[string]bool{"1": true, "2": true, "3": true, "4": true, "5": true, "6": true, "7": true, "8": true}
+	fenPieces := map[string]bool{"p": true, "n": true, "b": true, "r": true, "q": true, "k": true}
+
+	// Validate each row.
+	for _, row := range rows {
+		fieldSum := 0
+		previousWasDigit := false
+		previousWasPiece := false
+
+		for _, c := range strings.Split(row, "") {
+			if _, ok := fenNumbers[c]; ok {
+				if previousWasDigit {
+					panic("two subsequent digits in position part of fen")
+				}
+
+				i, _ := strconv.Atoi(c)
+				fieldSum += i
+				previousWasDigit = true
+				previousWasPiece = false
+			} else if c == "~" {
+				if !previousWasPiece {
+					panic("~ not after piece in position part of fen")
+				}
+				previousWasDigit = false
+				previousWasPiece = false
+			} else if _, ok := fenPieces[strings.ToLower(c)]; ok {
+				fieldSum += 1
+				previousWasDigit = false
+				previousWasPiece = true
+			} else {
+				panic("invalid character in position part of fen")
+			}
+		}
+
+		if fieldSum != 8 {
+			panic("expected 8 columns per row in position part of fen")
+		}
+	}
+
+	// Clear the board.
+	b.Clear()
+
+	// Put pieces on the board.
+	squareIndex := 0
+	for _, c := range strings.Split(fen, "") {
+		if _, ok := fenNumbers[c]; ok {
+			i, _ := strconv.Atoi(c)
+			squareIndex += i
+		} else if _, ok := fenPieces[strings.ToLower(c)]; ok {
+			piece := MakePieceFromSymbol(c)
+			b.SetPieceAt(squares180[squareIndex], &piece, false)
+			squareIndex += 1
+		} else if c == "~" {
+			b.promoted |= MakeBitboardFromSquare(squares[squares180[squareIndex-1]])
+		}
+	}
+}
+
+func (b *Board) PieceMap() map[Square]*Piece {
+	result := make(map[Square]*Piece)
+	for s := range b.occupied.ScanReversed() {
+		p := b.PieceAt(Square(s))
+		cp := MakePiece(p.Type, p.Color)
+		result[Square(s)] = &cp
+	}
+	return result
+}
+
+func (b *Board) SetPieceMap(pm map[Square]*Piece) {
+	b.Clear()
+	for s, p := range pm {
+		cp := MakePiece(p.Type, p.Color)
+		b.SetPieceAt(s, &cp, false)
+	}
+}
+
+// func SetChess960Pos() {
+
+// }
+
+func (b *Board) Ascii() string {
+	builder := []string{}
+
+	for _, square := range squares180 {
+		piece := b.PieceAt(square)
+
+		if piece != nil {
+			builder = append(builder, piece.Symbol())
+		} else {
+			builder = append(builder, ".")
+		}
+
+		if MakeBitboardFromSquare(square).IsMaskingBB(BBFileH) {
+			if square != H1 {
+				builder = append(builder, "\n")
+			}
+		} else {
+			builder = append(builder, " ")
+		}
+	}
+
+	return strings.Join(builder, "")
+}
+
+// TODO: Rendering with borders borders is screwed up
+func (b *Board) Unicode(invertColor, borders bool) string {
+	builder := []string{}
+
+	for rank := 7; rank >= 0; rank-- {
+		if borders {
+			builder = append(builder, "  ")
+			builder = append(builder, strings.Repeat("-", 17))
+			builder = append(builder, "\n")
+
+			builder = append(builder, Rank(rank).Name())
+			builder = append(builder, " ")
+		}
+
+		for file := 0; file < 8; file++ {
+			square := MakeSquare(File(file), Rank(rank))
+
+			if borders {
+				builder = append(builder, "|")
+			} else if file > 0 {
+				builder = append(builder, " ")
+			}
+
+			piece := b.PieceAt(square)
+			if piece != nil {
+				builder = append(builder, piece.UnicodeSymbol(invertColor))
+			} else {
+				builder = append(builder, ".")
+			}
+		}
+
+		if borders {
+			builder = append(builder, "|")
+		}
+
+		if borders || rank > 0 {
+			builder = append(builder, "\n")
+		}
+	}
+
+	if borders {
+		builder = append(builder, "  ")
+		builder = append(builder, strings.Repeat("-", 17))
+		builder = append(builder, "\n")
+		builder = append(builder, "   a b c d e f g h")
+	}
+
+	return strings.Join(builder, "")
 }

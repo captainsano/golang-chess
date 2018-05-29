@@ -1,33 +1,15 @@
 package main
 
 import (
-	"fmt"
-
 	. "github.com/captainsano/golang-chess/core"
 )
 
 var rays, between = Rays()
 
-func printAttacks(from, to Square) {
-	x := rays[from][to]
-
-	fmt.Println("--> ", from.Name(), " to ", to.Name())
-	fmt.Println(x.Ascii())
-	fmt.Println()
-}
-
-func printBetween(from, to Square) {
-	x := between[from][to]
-
-	fmt.Println("--> ", from.Name(), " to ", to.Name())
-	fmt.Println(x.Ascii())
-	fmt.Println()
-}
-
 func main() {
-	fmt.Println("Attacks: ")
-	printAttacks(B1, G1)
+	fen := "rnbqkbnr/ppp2ppp/3p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R"
 
-	fmt.Println("Between: ")
-	printBetween(B1, G1)
+	board := MakeBoard(fen)
+
+	print(board.Unicode(false, false))
 }

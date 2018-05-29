@@ -149,6 +149,22 @@ const (
 	H8 Square = 63
 )
 
+var squares = func() []Square {
+	sqs := []Square{}
+	for i := Square(0); i < 64; i++ {
+		sqs = append(sqs, i)
+	}
+	return sqs
+}()
+
+var squares180 = func() []Square {
+	sqs180 := []Square{}
+	for _, i := range squares {
+		sqs180 = append(sqs180, i.Mirror())
+	}
+	return sqs180
+}()
+
 func MakeSquare(file File, rank Rank) Square {
 	return Square(uint(rank)*8 + uint(file))
 }
