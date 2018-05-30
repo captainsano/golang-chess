@@ -9,7 +9,7 @@ const (
 	StartingFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 )
 
-type Board struct {
+type BaseBoard struct {
 	pawns   Bitboard
 	knights Bitboard
 	bishops Bitboard
@@ -27,8 +27,8 @@ const (
 	StartingBoardFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
 )
 
-func MakeBoard(fen string) Board {
-	b := Board{}
+func NewBaseBoard(fen string) BaseBoard {
+	b := BaseBoard{}
 	b.occupiedColor = []Bitboard{BBVoid, BBVoid}
 
 	if fen == "" {
@@ -42,7 +42,7 @@ func MakeBoard(fen string) Board {
 	return b
 }
 
-func (b *Board) Reset() {
+func (b *BaseBoard) Reset() {
 	b.pawns = BBRank2 | BBRank7
 	b.knights = BBB1 | BBG1 | BBB8 | BBG8
 	b.bishops = BBC1 | BBF1 | BBC8 | BBF8
@@ -57,7 +57,7 @@ func (b *Board) Reset() {
 	b.occupied = BBRank1 | BBRank2 | BBRank7 | BBRank8
 }
 
-func (b *Board) Clear() {
+func (b *BaseBoard) Clear() {
 	b.pawns = BBVoid
 	b.knights = BBVoid
 	b.bishops = BBVoid
@@ -72,7 +72,7 @@ func (b *Board) Clear() {
 	b.occupied = BBVoid
 }
 
-func (b *Board) PieceMask(t PieceType, c Color) Bitboard {
+func (b *BaseBoard) PieceMask(t PieceType, c Color) Bitboard {
 	bb := BBVoid
 	switch t {
 	case Pawn:
@@ -92,25 +92,25 @@ func (b *Board) PieceMask(t PieceType, c Color) Bitboard {
 	return bb & b.occupiedColor[c]
 }
 
-func (b *Board) Pieces(t PieceType, c Color) Bitboard {
+func (b *BaseBoard) Pieces(t PieceType, c Color) Bitboard {
 	return b.PieceMask(t, c)
 }
 
-func (b *Board) PieceAt(s Square) *Piece {
+func (b *BaseBoard) PieceAt(s Square) *Piece {
 	t := b.PieceTypeAt(s)
 	if t == NoPiece {
 		return nil
 	}
 
-	mask := BBSquare(s)
+	mask := NewBitboardFromSquare(s)
 	if b.occupiedColor[White].IsMaskingBB(mask) {
 		return &Piece{t, White}
 	}
 	return &Piece{t, Black}
 }
 
-func (b *Board) PieceTypeAt(s Square) PieceType {
-	mask := BBSquare(s)
+func (b *BaseBoard) PieceTypeAt(s Square) PieceType {
+	mask := NewBitboardFromSquare(s)
 
 	if !b.occupied.IsMaskingBB(mask) {
 		return NoPiece
@@ -131,7 +131,7 @@ func (b *Board) PieceTypeAt(s Square) PieceType {
 	return NoPiece
 }
 
-func (b *Board) King(c Color) *Square {
+func (b *BaseBoard) King(c Color) *Square {
 	mask := b.occupiedColor[c] & b.kings & ^b.promoted
 
 	if mask != 0 {
@@ -142,8 +142,8 @@ func (b *Board) King(c Color) *Square {
 	return nil
 }
 
-func (b *Board) Attacks(s Square) Bitboard {
-	mask := BBSquare(s)
+func (b *BaseBoard) Attacks(s Square) Bitboard {
+	mask := NewBitboardFromSquare(s)
 
 	if mask.IsMaskingBB(b.pawns) {
 		if mask.IsMaskingBB(b.occupiedColor[White]) {
@@ -174,7 +174,7 @@ func (b *Board) Attacks(s Square) Bitboard {
 	return attacks
 }
 
-func (b *Board) AttackersMask(c Color, s Square) Bitboard {
+func (b *BaseBoard) AttackersMask(c Color, s Square) Bitboard {
 	rank_pieces := RankMasks(s) & b.occupied
 	file_pieces := FileMasks(s) & b.occupied
 	diag_pieces := DiagMasks(s) & b.occupied
@@ -192,21 +192,21 @@ func (b *Board) AttackersMask(c Color, s Square) Bitboard {
 	return attackers & b.occupiedColor[c]
 }
 
-func (b *Board) IsAttackedBy(c Color, s Square) bool {
+func (b *BaseBoard) IsAttackedBy(c Color, s Square) bool {
 	return b.AttackersMask(c, s) != 0
 }
 
-func (b *Board) Attackers(c Color, s Square) Bitboard {
+func (b *BaseBoard) Attackers(c Color, s Square) Bitboard {
 	return b.AttackersMask(c, s)
 }
 
-func (b *Board) PinMask(c Color, s Square) Bitboard {
+func (b *BaseBoard) PinMask(c Color, s Square) Bitboard {
 	kingSq := b.King(c)
 	if kingSq == nil {
 		return BBAll
 	}
 
-	squareMask := MakeBitboardFromSquare(s)
+	squareMask := NewBitboardFromSquare(s)
 
 	ks := [][]map[Bitboard]Bitboard{fileAttacks, rankAttacks, diagAttacks}
 	vs := []Bitboard{b.rooks | b.queens, b.rooks | b.queens, b.bishops | b.queens}
@@ -230,13 +230,13 @@ func (b *Board) PinMask(c Color, s Square) Bitboard {
 	return BBAll
 }
 
-func (b *Board) IsPinned(c Color, s Square) bool {
+func (b *BaseBoard) IsPinned(c Color, s Square) bool {
 	return b.PinMask(c, s) != BBAll
 }
 
-func (b *Board) RemovePieceAt(s Square) Piece {
+func (b *BaseBoard) RemovePieceAt(s Square) Piece {
 	pt := b.PieceTypeAt(s)
-	mask := MakeBitboardFromSquare(s)
+	mask := NewBitboardFromSquare(s)
 
 	var color Color
 	if b.occupiedColor[White].IsMaskingBB(mask) {
@@ -259,7 +259,7 @@ func (b *Board) RemovePieceAt(s Square) Piece {
 	case King:
 		b.kings ^= mask
 	default:
-		return MakePiece(pt, color)
+		return NewPiece(pt, color)
 	}
 
 	b.occupied ^= mask
@@ -268,13 +268,13 @@ func (b *Board) RemovePieceAt(s Square) Piece {
 
 	b.promoted &= ^mask
 
-	return MakePiece(pt, color)
+	return NewPiece(pt, color)
 }
 
-func (b *Board) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
+func (b *BaseBoard) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
 	b.RemovePieceAt(s)
 
-	mask := MakeBitboardFromSquare(s)
+	mask := NewBitboardFromSquare(s)
 
 	switch pt {
 	case Pawn:
@@ -299,7 +299,7 @@ func (b *Board) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
 	}
 }
 
-func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
+func (b *BaseBoard) SetPieceAt(s Square, p *Piece, promoted bool) {
 	if p != nil {
 		b._setPieceAt(s, p.Type, p.Color, promoted)
 	} else {
@@ -307,7 +307,7 @@ func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
 	}
 }
 
-func (b *Board) FEN(promoted bool) string {
+func (b *BaseBoard) FEN(promoted bool) string {
 	builder := []string{}
 	empty := 0
 
@@ -315,7 +315,7 @@ func (b *Board) FEN(promoted bool) string {
 		piece := b.PieceAt(square)
 
 		if piece == nil {
-			empty += 1
+			empty++
 		} else {
 			if empty > 0 {
 				builder = append(builder, string(empty))
@@ -324,12 +324,12 @@ func (b *Board) FEN(promoted bool) string {
 
 			builder = append(builder, piece.Symbol())
 
-			if promoted && MakeBitboardFromSquare(square).IsMaskingBB(b.promoted) {
+			if promoted && NewBitboardFromSquare(square).IsMaskingBB(b.promoted) {
 				builder = append(builder, "~")
 			}
 		}
 
-		if MakeBitboardFromSquare(square).IsMaskingBB(BBFileH) {
+		if NewBitboardFromSquare(square).IsMaskingBB(BBFileH) {
 			if empty > 0 {
 				builder = append(builder, string(empty))
 				empty = 0
@@ -344,7 +344,7 @@ func (b *Board) FEN(promoted bool) string {
 	return strings.Join(builder, "")
 }
 
-func (b *Board) SetFEN(fen string) {
+func (b *BaseBoard) SetFEN(fen string) {
 	fen = strings.TrimSpace(fen)
 	if strings.Contains(fen, " ") {
 		panic("expected position part of fen, got multiple parts")
@@ -382,7 +382,7 @@ func (b *Board) SetFEN(fen string) {
 				previousWasDigit = false
 				previousWasPiece = false
 			} else if _, ok := fenPieces[strings.ToLower(c)]; ok {
-				fieldSum += 1
+				fieldSum++
 				previousWasDigit = false
 				previousWasPiece = true
 			} else {
@@ -405,38 +405,34 @@ func (b *Board) SetFEN(fen string) {
 			i, _ := strconv.Atoi(c)
 			squareIndex += i
 		} else if _, ok := fenPieces[strings.ToLower(c)]; ok {
-			piece := MakePieceFromSymbol(c)
+			piece := NewPieceFromSymbol(c)
 			b.SetPieceAt(squares180[squareIndex], &piece, false)
-			squareIndex += 1
+			squareIndex++
 		} else if c == "~" {
-			b.promoted |= MakeBitboardFromSquare(squares[squares180[squareIndex-1]])
+			b.promoted |= NewBitboardFromSquare(squares[squares180[squareIndex-1]])
 		}
 	}
 }
 
-func (b *Board) PieceMap() map[Square]*Piece {
+func (b *BaseBoard) PieceMap() map[Square]*Piece {
 	result := make(map[Square]*Piece)
 	for s := range b.occupied.ScanReversed() {
 		p := b.PieceAt(Square(s))
-		cp := MakePiece(p.Type, p.Color)
+		cp := NewPiece(p.Type, p.Color)
 		result[Square(s)] = &cp
 	}
 	return result
 }
 
-func (b *Board) SetPieceMap(pm map[Square]*Piece) {
+func (b *BaseBoard) SetPieceMap(pm map[Square]*Piece) {
 	b.Clear()
 	for s, p := range pm {
-		cp := MakePiece(p.Type, p.Color)
+		cp := NewPiece(p.Type, p.Color)
 		b.SetPieceAt(s, &cp, false)
 	}
 }
 
-// func SetChess960Pos() {
-
-// }
-
-func (b *Board) Ascii() string {
+func (b *BaseBoard) Ascii() string {
 	builder := []string{}
 
 	for _, square := range squares180 {
@@ -448,7 +444,7 @@ func (b *Board) Ascii() string {
 			builder = append(builder, ".")
 		}
 
-		if MakeBitboardFromSquare(square).IsMaskingBB(BBFileH) {
+		if NewBitboardFromSquare(square).IsMaskingBB(BBFileH) {
 			if square != H1 {
 				builder = append(builder, "\n")
 			}
@@ -461,7 +457,7 @@ func (b *Board) Ascii() string {
 }
 
 // TODO: Rendering with borders borders is screwed up
-func (b *Board) Unicode(invertColor, borders bool) string {
+func (b *BaseBoard) Unicode(invertColor, borders bool) string {
 	builder := []string{}
 
 	for rank := 7; rank >= 0; rank-- {
@@ -475,7 +471,7 @@ func (b *Board) Unicode(invertColor, borders bool) string {
 		}
 
 		for file := 0; file < 8; file++ {
-			square := MakeSquare(File(file), Rank(rank))
+			square := NewSquare(File(file), Rank(rank))
 
 			if borders {
 				builder = append(builder, "|")

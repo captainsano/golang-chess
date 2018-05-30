@@ -16,7 +16,7 @@ const (
 	King    PieceType = 6
 )
 
-func MakePieceType(i uint8) PieceType {
+func NewPieceType(i uint8) PieceType {
 	switch i {
 	case 1:
 		return Pawn
@@ -109,11 +109,11 @@ type Piece struct {
 	Color Color
 }
 
-func MakePiece(t PieceType, c Color) Piece {
+func NewPiece(t PieceType, c Color) Piece {
 	return Piece{Type: t, Color: c}
 }
 
-func MakePieceFromSymbol(s string) Piece {
+func NewPieceFromSymbol(s string) Piece {
 	switch s {
 	case "R":
 		return Piece{Rook, White}

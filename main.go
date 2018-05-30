@@ -7,9 +7,13 @@ import (
 var rays, between = Rays()
 
 func main() {
-	fen := "rnbqkbnr/ppp2ppp/3p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R"
+	fen := StartingBoardFEN
 
-	board := MakeBoard(fen)
+	board := NewBaseBoard(fen)
+
+	board.RemovePieceAt(E2)
+	p := NewPiece(Pawn, White)
+	board.SetPieceAt(E4, &p, false)
 
 	print(board.Unicode(false, false))
 }

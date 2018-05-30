@@ -165,7 +165,7 @@ var squares180 = func() []Square {
 	return sqs180
 }()
 
-func MakeSquare(file File, rank Rank) Square {
+func NewSquare(file File, rank Rank) Square {
 	return Square(uint(rank)*8 + uint(file))
 }
 

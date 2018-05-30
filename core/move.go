@@ -7,10 +7,10 @@ type Move struct {
 	// Drop?
 }
 
-func MakeMove(fromSquare, toSquare Square, promotion *Piece) Move {
+func NewMove(fromSquare, toSquare Square, promotion *Piece) Move {
 	var p *Piece
 	if promotion != nil {
-		*p = MakePiece(promotion.Type, promotion.Color)
+		*p = NewPiece(promotion.Type, promotion.Color)
 	}
 
 	return Move{
@@ -20,7 +20,7 @@ func MakeMove(fromSquare, toSquare Square, promotion *Piece) Move {
 	}
 }
 
-func MakeNullMove() Move {
+func NewNullMove() Move {
 	return Move{
 		FromSquare: 0,
 		ToSquare:   0,

@@ -111,35 +111,31 @@ const (
 	BBBackRanks Bitboard = BBRank1 | BBRank8
 )
 
-func BBRank(r Rank) Bitboard {
+func NewBitboardFromRank(r Rank) Bitboard {
 	return 0xff << (8 * r)
 }
 
-func BBFile(f File) Bitboard {
+func NewBitboardFromFile(f File) Bitboard {
 	return 0x0101010101010101 << f
 }
 
-func BBSquare(s Square) Bitboard {
-	return MakeBitboardFromSquare(s)
-}
-
-func MakeBitboard(b uint64) Bitboard {
+func NewBitboard(b uint64) Bitboard {
 	return Bitboard(b)
 }
 
-func MakeBitboardFromSquareIndex(i uint8) Bitboard {
+func NewBitboardFromSquareIndex(i uint8) Bitboard {
 	return Bitboard(1 << i)
 }
 
-func MakeBitboardFromSquare(s Square) Bitboard {
-	return MakeBitboardFromSquareIndex(s.Index())
+func NewBitboardFromSquare(s Square) Bitboard {
+	return NewBitboardFromSquareIndex(s.Index())
 }
 
-func MakeBitboardFromFileIndex(i uint8) Bitboard {
+func NewBitboardFromFileIndex(i uint8) Bitboard {
 	return Bitboard(0x0101010101010101 << i)
 }
 
-func MakeBitboardFromRankIndex(i uint8) Bitboard {
+func NewBitboardFromRankIndex(i uint8) Bitboard {
 	return Bitboard(0xff << (8 * i))
 }
 
@@ -182,7 +178,7 @@ func (b Bitboard) ScanReversed() chan int {
 
 			r := bits.Len64(uint64(b)) - 1
 			ch <- r
-			mask ^= MakeBitboardFromSquareIndex(uint8(r))
+			mask ^= NewBitboardFromSquareIndex(uint8(r))
 		}
 	}(b)
 
@@ -194,12 +190,12 @@ func (a Bitboard) IsMaskingBB(b Bitboard) bool {
 }
 
 func (b *Bitboard) Add(s Square) {
-	mask := MakeBitboardFromSquareIndex(s.Index())
+	mask := NewBitboardFromSquareIndex(s.Index())
 	*b |= mask
 }
 
 func (b *Bitboard) Remove(s Square) {
-	mask := ^MakeBitboardFromSquareIndex(s.Index())
+	mask := ^NewBitboardFromSquareIndex(s.Index())
 	*b &= mask
 }
 
@@ -260,8 +256,8 @@ func (b Bitboard) Ascii() string {
 
 	for _, r := range RankReverseIter {
 		for _, f := range FileIter {
-			sq := MakeSquare(f, r)
-			mask := MakeBitboardFromSquareIndex(sq.Index())
+			sq := NewSquare(f, r)
+			mask := NewBitboardFromSquareIndex(sq.Index())
 
 			if b.IsMaskingBB(mask) {
 				ascii = append(ascii, "1")
@@ -296,7 +292,7 @@ func SlidingAttacks(square Square, occupied Bitboard, deltas []int) Bitboard {
 				break
 			}
 
-			mask := MakeBitboardFromSquare(sq)
+			mask := NewBitboardFromSquare(sq)
 
 			attacks |= mask
 
@@ -355,7 +351,7 @@ func PawnAttacks(s Square, c Color) Bitboard {
 var edges = func() []Bitboard {
 	bbs := []Bitboard{}
 	for i := Square(0); i < 64; i++ {
-		bbs = append(bbs, (((BBRank1 | BBRank8) & ^BBRank(i.Rank())) | ((BBFileA | BBFileH) & ^BBFile(i.File()))))
+		bbs = append(bbs, (((BBRank1 | BBRank8) & ^NewBitboardFromRank(i.Rank())) | ((BBFileA | BBFileH) & ^NewBitboardFromFile(i.File()))))
 	}
 	return bbs
 }()
@@ -435,13 +431,13 @@ func Rays() ([][]Bitboard, [][]Bitboard) {
 	between := [][]Bitboard{}
 
 	for a := Square(0); a < 64; a++ {
-		bbA := MakeBitboardFromSquare(a)
+		bbA := NewBitboardFromSquare(a)
 
 		rays_row := []Bitboard{}
 		between_row := []Bitboard{}
 
 		for b := Square(0); b < 64; b++ {
-			bbB := MakeBitboardFromSquare(b)
+			bbB := NewBitboardFromSquare(b)
 
 			if diagAttacks[a][0].IsMaskingBB(bbB) {
 				rays_row = append(rays_row, ((diagAttacks[a][0] & diagAttacks[b][0]) | bbA | bbB))
