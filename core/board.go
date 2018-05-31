@@ -1,12 +1,15 @@
 package core
 
 import (
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
 const (
-	StartingFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	StartingFEN            = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	FENCastlingRegexString = "^(?:-|[KQABCDEFGH]{0,2}[kqabcdefgh]{0,2})"
 )
 
 type BaseBoard struct {
@@ -131,15 +134,14 @@ func (b *BaseBoard) PieceTypeAt(s Square) PieceType {
 	return NoPiece
 }
 
-func (b *BaseBoard) King(c Color) *Square {
+func (b *BaseBoard) King(c Color) Square {
 	mask := b.occupiedColor[c] & b.kings & ^b.promoted
 
 	if mask != 0 {
-		s := Square(mask.Msb())
-		return &s
+		return Square(mask.Msb())
 	}
 
-	return nil
+	return SquareNone
 }
 
 func (b *BaseBoard) Attacks(s Square) Bitboard {
@@ -202,7 +204,7 @@ func (b *BaseBoard) Attackers(c Color, s Square) Bitboard {
 
 func (b *BaseBoard) PinMask(c Color, s Square) Bitboard {
 	kingSq := b.King(c)
-	if kingSq == nil {
+	if kingSq == SquareNone {
 		return BBAll
 	}
 
@@ -214,12 +216,12 @@ func (b *BaseBoard) PinMask(c Color, s Square) Bitboard {
 	for i, _ := range ks {
 		attacks, sliders := ks[i], vs[i]
 
-		rays := attacks[*kingSq][0]
+		rays := attacks[kingSq][0]
 		if rays.IsMaskingBB(squareMask) {
 			snipers := rays & sliders & b.occupiedColor[c.Swap()]
 			for sniper := range snipers.ScanReversed() {
-				if bbBetween[sniper][*kingSq]&(b.occupied|squareMask) == squareMask {
-					return bbRays[*kingSq][sniper]
+				if bbBetween[sniper][kingSq]&(b.occupied|squareMask) == squareMask {
+					return bbRays[kingSq][sniper]
 				}
 			}
 
@@ -504,4 +506,492 @@ func (b *BaseBoard) Unicode(invertColor, borders bool) string {
 	}
 
 	return strings.Join(builder, "")
+}
+
+type Board struct {
+	baseBoard BaseBoard
+
+	aliases     []string
+	uciVariant  string
+	startingFen string
+
+	// TODO: tbw/tbz
+
+	connectedKings     bool
+	oneKing            bool
+	capturesCompulsory bool
+
+	chess960 bool
+
+	moveStack []Move
+	stack     []string
+
+	turn           Color
+	castlingRights Bitboard
+	epSquare       Square
+	halfMoveClock  uint
+	fullMoveNumber uint
+}
+
+func NewBoard(fen string, chess960 bool) Board {
+	board := Board{}
+
+	board.aliases = []string{"Standard", "Chess", "Classical", "Normal"}
+	board.uciVariant = "chess"
+	board.startingFen = StartingFEN
+	board.connectedKings = false
+	board.oneKing = true
+	board.capturesCompulsory = false
+
+	board.chess960 = chess960
+
+	board.moveStack = []Move{}
+	board.stack = []string{}
+
+	board.baseBoard = NewBaseBoard(strings.Fields(fen)[0])
+	if fen == "" {
+		board.Clear()
+	} else if fen == StartingFEN {
+		board.Reset()
+	} else {
+		board.SetFEN(fen)
+	}
+
+	return board
+}
+
+func (b *Board) Reset() {
+	b.turn = White
+	b.castlingRights = BBCorners
+	b.epSquare = SquareNone
+	b.halfMoveClock = 0
+	b.fullMoveNumber = 1
+
+	b.baseBoard.Reset()
+	// b.clearStack()
+}
+
+func (b *Board) Clear() {
+	b.turn = White
+	b.castlingRights = BBVoid
+	b.epSquare = SquareNone
+	b.halfMoveClock = 0
+	b.fullMoveNumber = 1
+
+	b.baseBoard.Clear()
+	b.clearStack()
+}
+
+func (b *Board) clearStack() {
+	b.moveStack = []Move{}
+	b.stack = []string{}
+}
+
+func (b *Board) RemovePieceAt(s Square) Piece {
+	piece := b.baseBoard.RemovePieceAt(s)
+	b.clearStack()
+	return piece
+}
+
+func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
+	b.baseBoard.SetPieceAt(s, p, promoted)
+	b.clearStack()
+}
+
+func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		ourPieces := b.baseBoard.occupiedColor[b.turn]
+
+		// Generate piece moves
+		nonPawns := ourPieces & ^b.baseBoard.pawns & fromMask
+		for fromSquare := range nonPawns.ScanReversed() {
+			fmt.Println("--> Evaluating from Square: ", fromSquare)
+			moves := b.baseBoard.Attacks(Square(fromSquare)) & ^ourPieces & toMask
+			for toSquare := range moves.ScanReversed() {
+				ch <- NewMove(Square(fromSquare), Square(toSquare), NoPiece)
+			}
+		}
+
+		// Generate castling moves
+		if fromMask.IsMaskingBB(b.baseBoard.kings) {
+			for move := range b.generateCastlingMoves(fromMask, toMask) {
+				ch <- move
+			}
+		}
+
+		// The remaining moves are pawn moves
+		pawns := b.baseBoard.pawns & b.baseBoard.occupiedColor[b.turn] & fromMask
+		if pawns == BBVoid {
+			close(ch)
+			return
+		}
+
+		// Generate captures
+		capturers := pawns
+		for fromSquare := range capturers.ScanReversed() {
+			targets := pawnAttacks[b.turn][fromSquare] & b.baseBoard.occupiedColor[b.turn.Swap()] & toMask
+			for toSquare := range targets.ScanReversed() {
+				if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
+					ch <- NewMove(Square(fromSquare), Square(toSquare), Queen)
+					ch <- NewMove(Square(fromSquare), Square(toSquare), Rook)
+					ch <- NewMove(Square(fromSquare), Square(toSquare), Bishop)
+					ch <- NewMove(Square(fromSquare), Square(toSquare), Knight)
+				} else {
+					ch <- NewMove(Square(fromSquare), Square(toSquare), NoPiece)
+				}
+			}
+		}
+
+		// Prepare pawn advance generation
+		singleMoves, doubleMoves := BBVoid, BBVoid
+		if b.turn == White {
+			singleMoves = (pawns << 8) & ^b.baseBoard.occupied
+			doubleMoves = (singleMoves << 8) & ^b.baseBoard.occupied & (BBRank3 | BBRank4)
+		} else {
+			singleMoves = (pawns >> 8) & ^b.baseBoard.occupied
+			doubleMoves = (singleMoves >> 8) & ^b.baseBoard.occupied & (BBRank6 | BBRank5)
+		}
+		singleMoves &= toMask
+		doubleMoves &= toMask
+
+		// Generate single pawn moves
+		for toSquare := range singleMoves.ScanReversed() {
+			fromSquare := Square(toSquare)
+			if b.turn == Black {
+				fromSquare += 8
+			} else {
+				fromSquare -= 8
+			}
+
+			if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
+				ch <- NewMove(fromSquare, Square(toSquare), Queen)
+				ch <- NewMove(fromSquare, Square(toSquare), Rook)
+				ch <- NewMove(fromSquare, Square(toSquare), Bishop)
+				ch <- NewMove(fromSquare, Square(toSquare), Knight)
+			} else {
+				ch <- NewMove(fromSquare, Square(toSquare), NoPiece)
+			}
+		}
+
+		// Generate double pawn moves
+		for toSquare := range doubleMoves.ScanReversed() {
+			fromSquare := Square(toSquare)
+			if b.turn == Black {
+				fromSquare += 16
+			} else {
+				fromSquare -= 16
+			}
+			ch <- NewMove(fromSquare, Square(toSquare), NoPiece)
+		}
+
+		// Generate enpassant captures
+		if b.epSquare != SquareNone {
+			for move := range b.generatePseudoLegalEp(fromMask, toMask) {
+				ch <- move
+			}
+		}
+
+		close(ch)
+	}()
+
+	return ch
+}
+
+func (b *Board) GenerateAllPseudoLegalMoves() chan Move {
+	return b.GeneratePseudoLegalMoves(BBAll, BBAll)
+}
+
+func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		if (b.epSquare != SquareNone) || !NewBitboardFromSquare(b.epSquare).IsMaskingBB(toMask) {
+			close(ch)
+			return
+		}
+
+		if NewBitboardFromSquare(b.epSquare).IsMaskingBB(b.baseBoard.occupied) {
+			close(ch)
+			return
+		}
+
+		capturers := b.baseBoard.pawns & b.baseBoard.occupiedColor[b.turn] & fromMask & PawnAttacks(b.epSquare, b.turn.Swap())
+		if b.turn == White {
+			capturers &= BBRank4
+		} else {
+			capturers &= BBRank3
+		}
+
+		for capturer := range capturers.ScanReversed() {
+			ch <- NewMove(Square(capturer), b.epSquare, NoPiece)
+		}
+
+		close(ch)
+	}()
+
+	return ch
+}
+
+func (b *Board) generatePseudoLegalCaptures(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		for m := range b.GeneratePseudoLegalMoves(fromMask, (toMask & b.baseBoard.occupiedColor[b.turn.Swap()])) {
+			ch <- m
+		}
+
+		for m := range b.generatePseudoLegalEp(fromMask, toMask) {
+			ch <- m
+		}
+
+		close(ch)
+	}()
+
+	return ch
+}
+
+func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	// TODO: To be implemented
+
+	return ch
+}
+
+func (b *Board) IsCheck() bool {
+	kingSquare := b.baseBoard.King(b.turn)
+	return kingSquare != SquareNone && b.baseBoard.IsAttackedBy(b.turn.Swap(), kingSquare)
+}
+
+func (b *Board) IsIntoCheck(m *Move) bool {
+	// kingSquare := b.baseBoard.King(b.turn)
+	// if kingSquare == SquareNone {
+	// 	return false
+	// }
+
+	// checkers := b.baseBoard.AttackersMask(b.turn.Swap(), kingSquare)
+	// if checkers != BBVoid {
+	// 	if
+	// }
+
+	return false
+}
+
+func (b *Board) WasIntoCheck() bool {
+	return false
+}
+
+func (b *Board) IsPseudoLegal(m *Move) bool {
+	return false
+}
+
+func (b *Board) IsLegal(m *Move) bool {
+	return false
+}
+
+func (b *Board) IsVariantEnd() bool {
+	return false
+}
+
+func (b *Board) IsVariantLoss() bool {
+	return false
+}
+
+func (b *Board) IsVariantWin() bool {
+	return false
+}
+
+func (b *Board) IsVariantDraw() bool {
+	return false
+}
+
+func (b *Board) IsGameOver() bool {
+	return false
+}
+
+func (b *Board) Result(claimDraw bool) string {
+	return "*"
+}
+
+func (b *Board) IsCheckmate() bool {
+	return false
+}
+
+func (b *Board) IsStalemate() bool {
+	return false
+}
+
+func (b *Board) IsInsufficientMaterial() bool {
+	return false
+}
+
+func (b *Board) IsSeventyFiveMoves() bool {
+	return false
+}
+
+func (b *Board) IsFiveFoldRepetition() bool {
+	return false
+}
+
+func (b *Board) CanClaimDraw() bool {
+	return false
+}
+
+func (b *Board) CanClaimFiftyMoves() bool {
+	return false
+}
+
+func (b *Board) CanClaimThreefoldRepetition() bool {
+	return false
+}
+
+func (b *Board) pushCapture(m *Move, captureSquare Square, pt PieceType, wasPromoted bool) {
+}
+
+func (b *Board) Push(m *Move) {
+
+}
+
+func (b *Board) Pop() *Move {
+	return nil
+}
+
+func (b *Board) Peek() {
+
+}
+
+func (b *Board) FEN(shredder bool, enPassant string, promoted PieceType) string {
+	// return strings.Join([]string{
+	// 	b.epd(shredder, enPassant, promoted),
+	// 	string(b.halfMoveClock),
+	// 	string(b.fullMoveNumber),
+	// }, " ")
+	return ""
+}
+
+func (b *Board) ShredderFen(enPassant string, promoted PieceType) string {
+	// return strings.Join([]string{
+	// 	b.epd(true, enPassant, promoted),
+	// 	string(b.halfMoveClock),
+	// 	string(b.fullMoveNumber),
+	// }, " ")
+	return ""
+}
+
+func (b *Board) SetFEN(fen string) {
+	parts := strings.Fields(fen)
+	if len(parts) != 6 {
+		panic("FEN string should consist of 6 parts")
+	}
+
+	if !(parts[1] == "w" || parts[1] == "b") {
+		panic("Expected 'w' or 'b' for turn part of fen")
+	}
+
+	if parts[3] != "-" {
+		sq := NewSquareFromName(parts[3])
+		if sq == SquareNone {
+			panic("Invalid enpassant square name")
+		}
+	}
+
+	halfMoveClock, err := strconv.Atoi(parts[4])
+	if err != nil || halfMoveClock < 0 {
+		panic("Halfmove clock invalid or cannot be negative")
+	}
+
+	fullMoveNumber, err := strconv.Atoi(parts[5])
+	if err != nil || fullMoveNumber < 0 {
+		panic("fullmove number invalid or cannot be negative")
+	}
+
+	b.baseBoard.SetFEN(parts[0])
+
+	// set turn
+	if parts[1] == "w" {
+		b.turn = White
+	} else {
+		b.turn = Black
+	}
+
+	b.setCastlingFEN(parts[2])
+
+	if parts[3] == "-" {
+		b.epSquare = SquareNone
+	} else {
+		b.epSquare = NewSquareFromName(parts[3])
+	}
+
+	b.halfMoveClock = uint(halfMoveClock)
+	b.fullMoveNumber = uint(fullMoveNumber)
+
+	b.clearStack()
+}
+
+func (b *Board) setCastlingFEN(castlingFen string) {
+	if len(castlingFen) == 0 || castlingFen == "-" {
+		b.castlingRights = BBVoid
+		return
+	}
+
+	if matches, _ := regexp.MatchString(FENCastlingRegexString, castlingFen); !matches {
+		panic("Invalid castling fen")
+	}
+
+	b.castlingRights = BBVoid
+
+	for _, flag := range strings.Split(castlingFen, "") {
+		color := White
+		if flag == strings.ToUpper(flag) {
+			color = White
+		} else {
+			color = Black
+		}
+
+		flag = strings.ToLower(flag)
+		backRank := BBVoid
+		if color == White {
+			backRank = BBRank1
+		} else {
+			backRank = BBRank8
+		}
+		rooks := b.baseBoard.occupiedColor[color] & b.baseBoard.rooks & backRank
+		kingSquare := b.baseBoard.King(color)
+
+		if flag == "q" {
+			if kingSquare != SquareNone && rooks.Lsb() < int(kingSquare) {
+				b.castlingRights |= rooks & ^rooks
+			} else {
+				b.castlingRights |= BBFileA ^ backRank
+			}
+		} else if flag == "k" {
+			rook := rooks.Msb()
+			if kingSquare != SquareNone && int(kingSquare) < rook {
+				b.castlingRights |= NewBitboardFromSquare(Square(rook))
+			} else {
+				b.castlingRights |= BBFileH & backRank
+			}
+		} else {
+			b.castlingRights |= NewBitboardFromFile(FileFromName(flag)) & backRank
+		}
+	}
+
+	b.clearStack()
+}
+
+func (b *Board) SetPieceMap(pm map[Square]*Piece) {
+	b.baseBoard.SetPieceMap(pm)
+	b.clearStack()
+}
+
+func (b *Board) Ascii() string {
+	// TODO: Add other FEN params
+	return b.baseBoard.Ascii()
+}
+
+func (b *Board) Unicode(invertColor, borders bool) string {
+	// TODO: Add other FEN params
+	return b.baseBoard.Unicode(invertColor, borders)
 }

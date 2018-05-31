@@ -1,19 +1,23 @@
 package main
 
 import (
+	"fmt"
+
 	. "github.com/captainsano/golang-chess/core"
 )
 
 var rays, between = Rays()
 
 func main() {
-	fen := StartingBoardFEN
+	fen := StartingFEN
 
-	board := NewBaseBoard(fen)
+	board := NewBoard(fen, false)
 
-	board.RemovePieceAt(E2)
-	p := NewPiece(Pawn, White)
-	board.SetPieceAt(E4, &p, false)
+	// TODO: Debug why the white pieces are black
+	fmt.Println("Current Board: ")
+	fmt.Println(board.Ascii())
 
-	print(board.Unicode(false, false))
+	for m := range board.GenerateAllPseudoLegalMoves() {
+		fmt.Println("--> ", m.Uci())
+	}
 }

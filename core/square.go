@@ -1,6 +1,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/captainsano/golang-chess/util"
 )
 
@@ -15,6 +17,8 @@ const (
 	FileF File = 5
 	FileG File = 6
 	FileH File = 7
+
+	FileNone File = 8
 )
 
 var FileIter = [...]File{FileA, FileB, FileC, FileD, FileE, FileF, FileG, FileH}
@@ -53,6 +57,8 @@ const (
 	Rank6 Rank = 5
 	Rank7 Rank = 6
 	Rank8 Rank = 7
+
+	RankNone Rank = 8
 )
 
 var RankReverseIter = [...]Rank{Rank8, Rank7, Rank6, Rank5, Rank4, Rank3, Rank2, Rank1}
@@ -83,6 +89,8 @@ func (r Rank) Name() string {
 type Square uint8
 
 const (
+	SquareNone Square = 64
+
 	A1 Square = 0
 	B1 Square = 1
 	C1 Square = 2
@@ -167,6 +175,70 @@ var squares180 = func() []Square {
 
 func NewSquare(file File, rank Rank) Square {
 	return Square(uint(rank)*8 + uint(file))
+}
+
+func FileFromName(name string) File {
+	switch name {
+	case "a":
+		return FileA
+	case "b":
+		return FileB
+	case "c":
+		return FileC
+	case "d":
+		return FileD
+	case "e":
+		return FileE
+	case "f":
+		return FileF
+	case "g":
+		return FileG
+	case "h":
+		return FileH
+	}
+
+	return FileNone
+}
+
+func RankFromName(name string) Rank {
+	switch name {
+	case "1":
+		return Rank1
+	case "2":
+		return Rank2
+	case "3":
+		return Rank3
+	case "4":
+		return Rank4
+	case "5":
+		return Rank5
+	case "6":
+		return Rank6
+	case "7":
+		return Rank7
+	case "8":
+		return Rank8
+	}
+
+	return RankNone
+}
+
+// TODO: Optimize with ASCII value computation
+func NewSquareFromName(name string) Square {
+	n := strings.Split(name, "")
+	fileName, rankName := n[0], n[1]
+
+	file := FileFromName(fileName)
+	if file == FileNone {
+		return SquareNone
+	}
+
+	rank := RankFromName(rankName)
+	if rank == RankNone {
+		return SquareNone
+	}
+
+	return NewSquare(file, rank)
 }
 
 func (s Square) File() File {

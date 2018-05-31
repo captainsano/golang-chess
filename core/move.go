@@ -3,22 +3,21 @@ package core
 type Move struct {
 	FromSquare Square
 	ToSquare   Square
-	Promotion  *Piece
+	Promotion  PieceType
 	// Drop?
 }
 
-func NewMove(fromSquare, toSquare Square, promotion *Piece) Move {
-	var p *Piece
-	if promotion != nil {
-		*p = NewPiece(promotion.Type, promotion.Color)
-	}
-
+func NewMove(fromSquare, toSquare Square, promotion PieceType) Move {
 	return Move{
 		FromSquare: fromSquare,
 		ToSquare:   toSquare,
-		Promotion:  p,
+		Promotion:  promotion,
 	}
 }
+
+// func NewMoveFromUci(uci string) Move {
+
+// }
 
 func NewNullMove() Move {
 	return Move{
@@ -28,7 +27,7 @@ func NewNullMove() Move {
 }
 
 func (m *Move) Uci() string {
-	if m.Promotion != nil {
+	if m.Promotion != NoPiece {
 		return m.FromSquare.Name() + m.ToSquare.Name() + m.Promotion.Symbol()
 	}
 

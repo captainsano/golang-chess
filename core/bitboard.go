@@ -149,7 +149,6 @@ func (b Bitboard) ScanForward() chan int {
 	go func(mask Bitboard) {
 		for {
 			if mask == BBVoid {
-				close(ch)
 				break
 			}
 
@@ -157,6 +156,8 @@ func (b Bitboard) ScanForward() chan int {
 			ch <- bits.Len(uint(r)) - 1
 			mask ^= r
 		}
+
+		close(ch)
 	}(b)
 
 	return ch
@@ -172,7 +173,6 @@ func (b Bitboard) ScanReversed() chan int {
 	go func(mask Bitboard) {
 		for {
 			if mask == BBVoid {
-				close(ch)
 				break
 			}
 
@@ -180,6 +180,8 @@ func (b Bitboard) ScanReversed() chan int {
 			ch <- r
 			mask ^= NewBitboardFromSquareIndex(uint8(r))
 		}
+
+		close(ch)
 	}(b)
 
 	return ch
