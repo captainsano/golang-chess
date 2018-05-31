@@ -6,16 +6,13 @@ import (
 	. "github.com/captainsano/golang-chess/core"
 )
 
-var rays, between = Rays()
-
 func main() {
-	fen := StartingFEN
+	fen := "rnb1kbnr/ppp1q1pp/8/3P1p2/2PP4/3B1p2/PP3PPP/RNBQK2R w KQkq - 0 7"
 
 	board := NewBoard(fen, false)
 
-	// TODO: Debug why the white pieces are black
 	fmt.Println("Current Board: ")
-	fmt.Println(board.Ascii())
+	fmt.Println(board.Unicode(false, false))
 
 	for m := range board.GenerateAllPseudoLegalMoves() {
 		fmt.Println("--> ", m.Uci())

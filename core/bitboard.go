@@ -152,7 +152,7 @@ func (b Bitboard) ScanForward() chan int {
 				break
 			}
 
-			r := b & -b
+			r := mask & -mask
 			ch <- bits.Len(uint(r)) - 1
 			mask ^= r
 		}
@@ -176,7 +176,7 @@ func (b Bitboard) ScanReversed() chan int {
 				break
 			}
 
-			r := bits.Len64(uint64(b)) - 1
+			r := bits.Len64(uint64(mask)) - 1
 			ch <- r
 			mask ^= NewBitboardFromSquareIndex(uint8(r))
 		}

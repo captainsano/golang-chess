@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -607,7 +606,6 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 		// Generate piece moves
 		nonPawns := ourPieces & ^b.baseBoard.pawns & fromMask
 		for fromSquare := range nonPawns.ScanReversed() {
-			fmt.Println("--> Evaluating from Square: ", fromSquare)
 			moves := b.baseBoard.Attacks(Square(fromSquare)) & ^ourPieces & toMask
 			for toSquare := range moves.ScanReversed() {
 				ch <- NewMove(Square(fromSquare), Square(toSquare), NoPiece)
@@ -707,7 +705,7 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
 	go func() {
-		if (b.epSquare != SquareNone) || !NewBitboardFromSquare(b.epSquare).IsMaskingBB(toMask) {
+		if (b.epSquare == SquareNone) || !NewBitboardFromSquare(b.epSquare).IsMaskingBB(toMask) {
 			close(ch)
 			return
 		}
@@ -719,9 +717,9 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 
 		capturers := b.baseBoard.pawns & b.baseBoard.occupiedColor[b.turn] & fromMask & PawnAttacks(b.epSquare, b.turn.Swap())
 		if b.turn == White {
-			capturers &= BBRank4
+			capturers &= BBRank5
 		} else {
-			capturers &= BBRank3
+			capturers &= BBRank4
 		}
 
 		for capturer := range capturers.ScanReversed() {
@@ -755,7 +753,11 @@ func (b *Board) generatePseudoLegalCaptures(fromMask, toMask Bitboard) chan Move
 func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	// TODO: To be implemented
+	go func() {
+		// TODO: To be implemented
+
+		close(ch)
+	}()
 
 	return ch
 }
