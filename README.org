@@ -2,6 +2,8 @@
 
 ** Introduction
 
+THIS IS A WORK IN PROGRESS
+
 [[https://github.com/niklasf/python-chess][python-chess]] is a fantastic library for chess, written in pure python, under very active development. 
 This project is an attempt to incrementally port python-chess to golang, for learning and fun!
 
