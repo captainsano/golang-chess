@@ -21,9 +21,13 @@ func NewMove(fromSquare, toSquare Square, promotion PieceType) Move {
 
 func NewNullMove() Move {
 	return Move{
-		FromSquare: 0,
-		ToSquare:   0,
+		FromSquare: SquareNone,
+		ToSquare:   SquareNone,
 	}
+}
+
+func (m *Move) IsNull() bool {
+	return m.FromSquare == SquareNone || m.ToSquare == SquareNone
 }
 
 func (m *Move) Uci() string {

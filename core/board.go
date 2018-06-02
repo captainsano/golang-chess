@@ -4,6 +4,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/captainsano/golang-chess/util"
+	"github.com/andrewbackes/chess/piece"
 )
 
 const (
@@ -567,7 +570,7 @@ func (b *Board) Reset() {
 	b.fullMoveNumber = 1
 
 	b.baseBoard.Reset()
-	// b.clearStack()
+	b.clearStack()
 }
 
 func (b *Board) Clear() {
@@ -768,29 +771,101 @@ func (b *Board) IsCheck() bool {
 }
 
 func (b *Board) IsIntoCheck(m *Move) bool {
-	// kingSquare := b.baseBoard.King(b.turn)
-	// if kingSquare == SquareNone {
-	// 	return false
-	// }
+	kingSquare := b.baseBoard.King(b.turn)
+	if kingSquare == SquareNone {
+		return false
+	}
 
-	// checkers := b.baseBoard.AttackersMask(b.turn.Swap(), kingSquare)
-	// if checkers != BBVoid {
-	// 	if
-	// }
+	checkers := b.baseBoard.AttackersMask(b.turn.Swap(), kingSquare)
+	if checkers != BBVoid {
+		isIn := false
+		for move := range b.generateEvasions(kingSquare, checkers, NewBitboardFromSquare(m.FromSquare), NewBitboardFromSquare(m.ToSquare)) {
+			if move == *m {
+				isIn = true
+				break
+			}
+		}
 
-	return false
+		if !isIn {
+			return true
+		}
+	}
+
+	return b.isSafe(kingSquare, b.sliderBlockers(kingSquare), m)
 }
 
 func (b *Board) WasIntoCheck() bool {
-	return false
+	kingSquare := b.baseBoard.King(b.turn.Swap())
+	return kingSquare != SquareNone && b.baseBoard.IsAttackedBy(b.turn, kingSquare)
 }
 
 func (b *Board) IsPseudoLegal(m *Move) bool {
-	return false
+	if m.IsNull() {
+		return false
+	}
+
+	//if m.IsDrop() {
+	//	return false // TODO: What is move drop?
+	//}
+
+	// Source square must not be vacant
+	pieceType := b.baseBoard.PieceTypeAt(m.FromSquare);
+	if pieceType == NoPiece {
+		return false
+	}
+
+	// Get square masks
+	fromMask := NewBitboardFromSquare(m.FromSquare)
+	toMask := NewBitboardFromSquare(m.ToSquare)
+
+	// check turn
+	if !b.baseBoard.occupiedColor[b.turn].IsMaskingBB(fromMask) {
+		return false
+	}
+
+	// only pawns can promote and only on the back rank
+	if m.Promotion != NoPiece {
+		if pieceType != Pawn {
+			return false
+		}
+
+		if b.turn == White && m.ToSquare.Rank() != 7 {
+			return false
+		} else if b.turn == Black && m.ToSquare.Rank() != 0 {
+			return false
+		}
+	}
+
+	// Handle castling
+	if pieceType == King {
+		for move := range b.generateCastlingMoves(BBAll, BBAll) {
+			if move == *m {
+				return true
+			}
+		}
+	}
+
+	// Destination square cannot be occupied
+	if b.baseBoard.occupiedColor[b.turn].IsMaskingBB(toMask) {
+		return false
+	}
+
+	// Handle pawn moves
+	if pieceType == Pawn {
+		for move := range b.GeneratePseudoLegalMoves(fromMask, toMask) {
+			if move == *m {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	return b.baseBoard.Attacks(m.FromSquare) & toMask != BBVoid
 }
 
 func (b *Board) IsLegal(m *Move) bool {
-	return false
+	return !b.IsVariantEnd() && b.IsPseudoLegal(m) && !b.IsIntoCheck(m)
 }
 
 func (b *Board) IsVariantEnd() bool {
@@ -809,20 +884,125 @@ func (b *Board) IsVariantDraw() bool {
 	return false
 }
 
-func (b *Board) IsGameOver() bool {
+func (b *Board) IsGameOver(claimDraw bool) bool {
+	// 75 move rule
+	if b.IsSeventyFiveMoves() {
+		return true
+	}
+
+	// Insufficient material
+	if b.IsInsufficientMaterial() {
+		return true
+	}
+
+	// stalemate or checkmate
+	hasLegalMoves := 0
+	for range b.GenerateLegalMoves() {
+		hasLegalMoves++
+		break
+	}
+
+	if hasLegalMoves == 0 {
+		return true
+	}
+
+	// Fivefold repetition
+	if b.IsFiveFoldRepetition() {
+		return true
+	}
+
+	// claim draw
+	if claimDraw && b.CanClaimDraw() {
+		return true
+	}
+
 	return false
 }
 
 func (b *Board) Result(claimDraw bool) string {
-	return "*"
+	// Chess variant support
+	if b.IsVariantLoss() {
+		if b.turn == White {
+			return "0-1"
+		}
+		return "1-0"
+	} else if b.IsVariantWin() {
+		if b.turn == White {
+			return "1-0"
+		}
+		return "0-1"
+	} else if b.IsVariantDraw() {
+		return "1/2-1/2"
+	}
+
+	// Checkmate
+	if b.IsCheckmate() {
+		if b.turn == White {
+			return "0-1"
+		}
+		return "1-0"
+	}
+
+	// Draw claimed
+	if claimDraw && b.CanClaimDraw() {
+		return "1/2-1/2"
+	}
+
+	// 75 move rule or fivefold repetition
+	if b.IsSeventyFiveMoves() || b.IsFiveFoldRepetition() {
+		return "1/2-1/2"
+	}
+
+	// Insufficient material
+	if b.IsInsufficientMaterial() {
+		return "1/2-1/2"
+	}
+
+	// Stalemate
+	hasLegalMoves := 0
+	for range b.GenerateLegalMoves() {
+		hasLegalMoves++
+		break
+	}
+
+	if hasLegalMoves == 0 {
+		return "1/2-1/2"
+	}
+
+	// Undetermined
+	return "*'"
 }
 
 func (b *Board) IsCheckmate() bool {
-	return false
+	if !b.IsCheck() {
+		return false
+	}
+
+	hasLegalMoves := 0
+	for range b.GenerateLegalMoves() {
+		hasLegalMoves++
+		break
+	}
+
+	return hasLegalMoves == 0
 }
 
 func (b *Board) IsStalemate() bool {
-	return false
+	if b.IsCheck() {
+		return false
+	}
+
+	if b.IsVariantEnd() {
+		return false
+	}
+
+	hasLegalMoves := 0
+	for range b.GenerateLegalMoves() {
+		hasLegalMoves++
+		break
+	}
+
+	return hasLegalMoves == 0
 }
 
 func (b *Board) IsInsufficientMaterial() bool {
@@ -846,6 +1026,100 @@ func (b *Board) CanClaimFiftyMoves() bool {
 }
 
 func (b *Board) CanClaimThreefoldRepetition() bool {
+	return false
+}
+
+func (b *Board) sliderBlockers(kingSquare Square) Bitboard {
+	rooks_and_queens := b.baseBoard.rooks | b.baseBoard.queens
+	bishops_and_queens := b.baseBoard.bishops | b.baseBoard.queens
+
+	snipers := ((rankAttacks[kingSquare][0] & rooks_and_queens) |
+		(fileAttacks[kingSquare][0] & rooks_and_queens) |
+		(diagAttacks[kingSquare][0] & bishops_and_queens))
+
+	blockers := BBVoid
+
+	for sniper := range (snipers & b.baseBoard.occupiedColor[b.turn.Swap()]).ScanReversed() {
+		b := bbBetween[kingSquare][sniper] & b.baseBoard.occupied
+
+		// Add to blockers if exactly one piece in-between.
+		if (b & NewBitboardFromSquare(Square(b.Msb()))) == b {
+			blockers |= b
+		}
+	}
+
+	return blockers & b.baseBoard.occupiedColor[b.turn]
+}
+
+func (b *Board) isSafe(kingSquare Square, sliderBlockers Bitboard, m *Move) bool {
+	if m.FromSquare == kingSquare {
+		if b.IsCastling(m) {
+			return true
+		} else {
+			return !b.baseBoard.IsAttackedBy(b.turn.Swap(), m.ToSquare)
+		}
+	} else if b.IsEnPassant(m) {
+		return (b.baseBoard.PinMask(b.turn, move.FromSquare)&NewBitboardFromSquare[move.ToSquare]) != BBVoid && !b.epSkewered(kingSquare, move.FromSquare)
+	}
+
+	return (((blockers & NewBitboardFromSquare(m.FromSquare)) == BBVoid) || bbRays[m.FromSquare][m.ToSquare]&NewBitboardFromSquare(kingSquare))
+}
+
+func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		sliders := checkers & (b.baseBoard.bishops | b.baseBoard.rooks | b.baseBoard.queens)
+
+		attacked := BBVoid
+		for checker := range sliders.ScanReversed() {
+			attacked |= bbRays[kingSquare][checker] & ^NewBitboardFromSquare(Square(checker))
+
+			if NewBitboardFromSquare(kingSquare).IsMaskingBB(fromMask) {
+				for toSquare := range (kingAttacks[kingSquare] & ^b.baseBoard.occupiedColor[b.turn] & ^attacked & toMask).ScanReversed() {
+					ch <- NewMove(kingSquare, Square(toSquare), NoPiece)
+				}
+			}
+
+			checker := Square(checkers.Msb())
+			if NewBitboardFromSquare(checker) == checkers {
+				// capture or block a single checker
+				target := bbBetween[kingSquare][checker] | checkers
+
+				for move := range b.GeneratePseudoLegalMoves(^b.baseBoard.kings&fromMask, target&toMask) {
+					ch <- move
+				}
+
+				// Capture the checking pawn en passant (avoid duplicate)
+				if b.epSquare != SquareNone && !NewBitboardFromSquare(b.epSquare).IsMaskingBB(target) {
+					lastDouble := b.epSquare
+					if b.turn == White {
+						lastDouble -= 8
+					} else {
+						lastDouble += 8
+					}
+
+					if lastDouble == checker {
+						for move := range b.generatePseudoLegalEp(fromMask, toMask) {
+							ch <- move
+						}
+					}
+				}
+			}
+		}
+
+		close(ch)
+	}()
+
+	return ch
+}
+
+func (b *Board) IsCastling(m *Move) bool {
+	if b.baseBoard.kings.IsMaskingBB(NewBitboardFromSquare(m.FromSquare)) {
+		diff := int(m.FromSquare.File()) - int(m.ToSquare.File())
+		return util.AbsInt(diff) > 1 || (b.baseBoard.rooks&b.baseBoard.occupiedColor[b.turn]&NewBitboardFromSquare(m.ToSquare) != BBVoid)
+	}
+
 	return false
 }
 
