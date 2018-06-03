@@ -139,6 +139,10 @@ func NewBitboardFromRankIndex(i uint8) Bitboard {
 	return Bitboard(0xff << (8 * i))
 }
 
+func (b Bitboard) PopCount() int {
+	return bits.OnesCount64(uint64(b))
+}
+
 func (b Bitboard) Lsb() int {
 	return bits.Len(uint(b&-b)) - 1
 }
