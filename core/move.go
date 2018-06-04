@@ -12,11 +12,29 @@ type Move struct {
 	Drop       PieceType
 }
 
-func NewMove(fromSquare, toSquare Square, promotion PieceType) Move {
+func NewMove(fromSquare, toSquare Square, promotion, drop PieceType) Move {
 	return Move{
 		FromSquare: fromSquare,
 		ToSquare:   toSquare,
 		Promotion:  promotion,
+		Drop:       drop,
+	}
+}
+
+func NewPromotionMove(fromSquare, toSquare Square, promotion PieceType) Move {
+	return Move{
+		FromSquare: fromSquare,
+		ToSquare:   toSquare,
+		Promotion:  promotion,
+		Drop:       NoPiece,
+	}
+}
+
+func NewNormalMove(fromSquare, toSquare Square) Move {
+	return Move{
+		FromSquare: fromSquare,
+		ToSquare:   toSquare,
+		Promotion:  NoPiece,
 		Drop:       NoPiece,
 	}
 }
@@ -31,9 +49,12 @@ func NewNullMove() Move {
 }
 
 func NewDropMove(fromSquare, toSquare Square, drop PieceType) Move {
-	m := NewMove(fromSquare, toSquare, NoPiece)
-	m.Drop = drop
-	return m
+	return Move{
+		FromSquare: SquareNone,
+		ToSquare:   SquareNone,
+		Promotion:  NoPiece,
+		Drop:       drop,
+	}
 }
 
 func NewMoveFromUci(uci string) Move {
@@ -48,12 +69,12 @@ func NewMoveFromUci(uci string) Move {
 	}
 
 	if len(uci) == 4 {
-		return NewMove(NewSquareFromName(uci[0:2]), NewSquareFromName(uci[2:4]), NoPiece)
+		return NewNormalMove(NewSquareFromName(uci[0:2]), NewSquareFromName(uci[2:4]))
 	}
 
 	if len(uci) == 5 {
 		promotion := NewPieceFromSymbol(string(uci[4])).Type
-		return NewMove(NewSquareFromName(uci[0:2]), NewSquareFromName(uci[2:4]), promotion)
+		return NewPromotionMove(NewSquareFromName(uci[0:2]), NewSquareFromName(uci[2:4]), promotion)
 	}
 
 	panic("Expected UCI string to be of length 4 or 5")

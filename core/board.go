@@ -179,10 +179,10 @@ func (b *BaseBoard) Attacks(s Square) Bitboard {
 	return attacks
 }
 
-func (b *BaseBoard) AttackersMask(c Color, s Square) Bitboard {
-	rank_pieces := RankMasks(s) & b.occupied
-	file_pieces := FileMasks(s) & b.occupied
-	diag_pieces := DiagMasks(s) & b.occupied
+func (b *BaseBoard) attackersMask(c Color, s Square, occupied Bitboard) Bitboard {
+	rank_pieces := RankMasks(s) & occupied
+	file_pieces := FileMasks(s) & occupied
+	diag_pieces := DiagMasks(s) & occupied
 
 	queens_and_rooks := b.queens | b.rooks
 	queens_and_bishops := b.queens | b.bishops
@@ -197,8 +197,12 @@ func (b *BaseBoard) AttackersMask(c Color, s Square) Bitboard {
 	return attackers & b.occupiedColor[c]
 }
 
+func (b *BaseBoard) AttackersMask(c Color, s Square) Bitboard {
+	return b.attackersMask(c, s, b.occupied)
+}
+
 func (b *BaseBoard) IsAttackedBy(c Color, s Square) bool {
-	return b.AttackersMask(c, s) != 0
+	return b.AttackersMask(c, s) != BBVoid
 }
 
 func (b *BaseBoard) Attackers(c Color, s Square) Bitboard {
@@ -636,7 +640,7 @@ func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
 	b.clearStack()
 }
 
-func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
+func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
 	go func() {
@@ -647,7 +651,7 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 		for fromSquare := range nonPawns.ScanReversed() {
 			moves := b.baseBoard.Attacks(Square(fromSquare)) & ^ourPieces & toMask
 			for toSquare := range moves.ScanReversed() {
-				ch <- NewMove(Square(fromSquare), Square(toSquare), NoPiece)
+				ch <- NewNormalMove(Square(fromSquare), Square(toSquare))
 			}
 		}
 
@@ -671,12 +675,12 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			targets := pawnAttacks[b.turn][fromSquare] & b.baseBoard.occupiedColor[b.turn.Swap()] & toMask
 			for toSquare := range targets.ScanReversed() {
 				if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
-					ch <- NewMove(Square(fromSquare), Square(toSquare), Queen)
-					ch <- NewMove(Square(fromSquare), Square(toSquare), Rook)
-					ch <- NewMove(Square(fromSquare), Square(toSquare), Bishop)
-					ch <- NewMove(Square(fromSquare), Square(toSquare), Knight)
+					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Queen)
+					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Rook)
+					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Bishop)
+					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Knight)
 				} else {
-					ch <- NewMove(Square(fromSquare), Square(toSquare), NoPiece)
+					ch <- NewNormalMove(Square(fromSquare), Square(toSquare))
 				}
 			}
 		}
@@ -703,12 +707,12 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			}
 
 			if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
-				ch <- NewMove(fromSquare, Square(toSquare), Queen)
-				ch <- NewMove(fromSquare, Square(toSquare), Rook)
-				ch <- NewMove(fromSquare, Square(toSquare), Bishop)
-				ch <- NewMove(fromSquare, Square(toSquare), Knight)
+				ch <- NewPromotionMove(fromSquare, Square(toSquare), Queen)
+				ch <- NewPromotionMove(fromSquare, Square(toSquare), Rook)
+				ch <- NewPromotionMove(fromSquare, Square(toSquare), Bishop)
+				ch <- NewPromotionMove(fromSquare, Square(toSquare), Knight)
 			} else {
-				ch <- NewMove(fromSquare, Square(toSquare), NoPiece)
+				ch <- NewNormalMove(fromSquare, Square(toSquare))
 			}
 		}
 
@@ -720,7 +724,7 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			} else {
 				fromSquare -= 16
 			}
-			ch <- NewMove(fromSquare, Square(toSquare), NoPiece)
+			ch <- NewNormalMove(fromSquare, Square(toSquare))
 		}
 
 		// Generate enpassant captures
@@ -736,8 +740,8 @@ func (b *Board) GeneratePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 	return ch
 }
 
-func (b *Board) GenerateAllPseudoLegalMoves() chan Move {
-	return b.GeneratePseudoLegalMoves(BBAll, BBAll)
+func (b *Board) GeneratePseudoLegalMoves() chan Move {
+	return b.generatePseudoLegalMoves(BBAll, BBAll)
 }
 
 func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
@@ -762,7 +766,7 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 		}
 
 		for capturer := range capturers.ScanReversed() {
-			ch <- NewMove(Square(capturer), b.epSquare, NoPiece)
+			ch <- NewNormalMove(Square(capturer), b.epSquare)
 		}
 
 		close(ch)
@@ -775,7 +779,7 @@ func (b *Board) generatePseudoLegalCaptures(fromMask, toMask Bitboard) chan Move
 	ch := make(chan Move)
 
 	go func() {
-		for m := range b.GeneratePseudoLegalMoves(fromMask, (toMask & b.baseBoard.occupiedColor[b.turn.Swap()])) {
+		for m := range b.generatePseudoLegalMoves(fromMask, (toMask & b.baseBoard.occupiedColor[b.turn.Swap()])) {
 			ch <- m
 		}
 
@@ -878,7 +882,7 @@ func (b *Board) IsPseudoLegal(m *Move) bool {
 
 	// Handle pawn moves
 	if pieceType == Pawn {
-		for move := range b.GeneratePseudoLegalMoves(fromMask, toMask) {
+		for move := range b.generatePseudoLegalMoves(fromMask, toMask) {
 			if move == *m {
 				return true
 			}
@@ -1651,12 +1655,27 @@ func (b *Board) IsEnPassant(m *Move) bool {
 	return false
 }
 
-func (b *Board) epSkewered(kingSquare, fromSquare Square) bool {
-	return false
-}
+func (b *Board) epSkewered(kingSquare, capturer Square) bool {
+	lastDouble := b.epSquare
+	if b.turn == White {
+		lastDouble -= 8
+	} else {
+		lastDouble += 8
+	}
 
-func (b *Board) attackedForKing(fromMask, toMask Bitboard) Bitboard {
-	return BBVoid
+	occupancy := (b.baseBoard.occupied & ^NewBitboardFromSquare(lastDouble) & ^NewBitboardFromSquare(capturer) | NewBitboardFromSquare(b.epSquare))
+
+	horizontalAttackers := b.baseBoard.occupiedColor[b.turn.Swap()] & (b.baseBoard.rooks | b.baseBoard.queens)
+	if rankAttacks[kingSquare][(rankMasks[kingSquare] & occupancy)].IsMaskingBB(horizontalAttackers) {
+		return true
+	}
+
+	diagonalAttackers := b.baseBoard.occupiedColor[b.turn.Swap()] & (b.baseBoard.bishops & b.baseBoard.queens)
+	if diagAttacks[kingSquare][(diagMasks[kingSquare] & occupancy)].IsMaskingBB(diagonalAttackers) {
+		return true
+	}
+
+	return false
 }
 
 func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask Bitboard) chan Move {
@@ -1671,7 +1690,7 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 
 			if NewBitboardFromSquare(kingSquare).IsMaskingBB(fromMask) {
 				for toSquare := range (kingAttacks[kingSquare] & ^b.baseBoard.occupiedColor[b.turn] & ^attacked & toMask).ScanReversed() {
-					ch <- NewMove(kingSquare, Square(toSquare), NoPiece)
+					ch <- NewNormalMove(kingSquare, Square(toSquare))
 				}
 			}
 
@@ -1680,7 +1699,7 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 				// capture or block a single checker
 				target := bbBetween[kingSquare][checker] | checkers
 
-				for move := range b.GeneratePseudoLegalMoves(^b.baseBoard.kings&fromMask, target&toMask) {
+				for move := range b.generatePseudoLegalMoves(^b.baseBoard.kings&fromMask, target&toMask) {
 					ch <- move
 				}
 
@@ -1708,6 +1727,22 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 	return ch
 }
 
+func (b *Board) attackedForKing(path, occupied Bitboard) bool {
+	for sq := range path.ScanReversed() {
+		if b.baseBoard.attackersMask(b.turn.Swap(), Square(sq), occupied) != BBVoid {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (b *Board) castlingUncoversRankAttack(rookMask Bitboard, kingTo Square) Bitboard {
+	rankPieces := rankMasks[kingTo] & (b.baseBoard.occupied ^ rookMask)
+	sliders := (b.baseBoard.queens | b.baseBoard.rooks) & b.baseBoard.occupiedColor[b.turn.Swap()]
+	return rankAttacks[kingTo][rankPieces] & sliders
+}
+
 func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
@@ -1724,44 +1759,49 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 
 		kingMask := b.baseBoard.occupiedColor[b.turn] & b.baseBoard.kings & ^b.baseBoard.promoted & backRank & fromMask
 		kingMask = kingMask & -kingMask
-		if kingMask == BBVoid || b.attackedForKing(kingMask, b.baseBoard.occupied) == BBVoid {
+		if kingMask == BBVoid || b.attackedForKing(kingMask, b.baseBoard.occupied) {
 			close(ch)
 			return
 		}
 
-		// bbC := BBFileC & backRank
-		// bbD := BBFileD & backRank
-		// bbF := BBFileF & backRank
-		// bbG := BBFileG & backRank
+		bbC := BBFileC & backRank
+		bbD := BBFileD & backRank
+		bbF := BBFileF & backRank
+		bbG := BBFileG & backRank
 
-		// for candidate := range (b.cleanCastlingRights() & backRank & toMask).ScanReversed() {
-		//     rookSquare := NewBitboardFromSquare(Square(candidate))
-		//     aSide := rookSquare < kingSquare
+		for candidate := range (b.cleanCastlingRights() & backRank & toMask).ScanReversed() {
+			rookMask := NewBitboardFromSquare(Square(candidate))
+			aSide := rookMask < kingMask
 
-		//     emptyForRook := BBVoid
-		//     emptyForKing = BBVoid
+			emptyForRook := BBVoid
+			emptyForKing := BBVoid
 
-		//     if aSide {
-		// 		kingTo = bbC.Msb()
-		// 		if !rookSquare.IsMaskingBB(bbD) {
-		// 			emptyForRook = BB_BETWEEN[candidate][msb(bb_d)] | bb_d
-		// 		}
-		// 		if not king & bb_c:
-		// 		empty_for_king = BB_BETWEEN[msb(king)][king_to] | bb_c
-		// 	} else {
-		//         king_to = msb(bb_g)
-		//         if not rook & bb_f:
-		//             empty_for_rook = BB_BETWEEN[candidate][msb(bb_f)] | bb_f
-		//         if not king & bb_g:
-		//             empty_for_king = BB_BETWEEN[msb(king)][king_to] | bb_g
+			kingTo := SquareNone
 
-		//     if not ((self.occupied ^ king ^ rook) & (empty_for_king | empty_for_rook) or
-		//             self._attacked_for_king(empty_for_king, self.occupied ^ king) or
-		//             self._castling_uncovers_rank_attack(rook, king_to)):
-		// 		yield self._from_chess960(self.chess960, msb(king), candidate)
-		// 	}
+			if aSide {
+				kingTo := Square(bbC.Msb())
+				if !rookMask.IsMaskingBB(bbD) {
+					emptyForRook = bbBetween[candidate][bbD.Msb()] | bbD
+				}
+				if !kingMask.IsMaskingBB(bbC) {
+					emptyForKing = bbBetween[kingMask.Msb()][kingTo] | bbC
+				}
+			} else {
+				kingTo := Square(bbG.Msb())
+				if !rookMask.IsMaskingBB(bbF) {
+					emptyForRook = bbBetween[candidate][bbF] | bbF
+				}
+				if !kingMask.IsMaskingBB(bbG) {
+					emptyForKing = bbBetween[kingMask.Msb()][kingTo] | bbG
+				}
+			}
 
-		// }
+			if !((((b.baseBoard.occupied ^ kingMask ^ rookMask) & (emptyForKing | emptyForRook)) != BBVoid) ||
+				b.attackedForKing(emptyForKing, (b.baseBoard.occupied^kingMask)) ||
+				b.castlingUncoversRankAttack(rookMask, kingTo) != BBVoid) {
+				ch <- b.fromChess960(b.chess960, Square(kingMask.Msb()), Square(candidate), NoPiece, NoPiece)
+			}
+		}
 
 		close(ch)
 	}()
@@ -1776,6 +1816,48 @@ func (b *Board) IsCastling(m *Move) bool {
 	}
 
 	return false
+}
+
+func (b *Board) fromChess960(chess960 bool, fromSquare, toSquare Square, promotion, drop PieceType) Move {
+	if !chess960 && drop == NoPiece {
+		if fromSquare == E1 && b.baseBoard.kings.IsMaskingBB(BBE1) {
+			if toSquare == H1 {
+				return NewNormalMove(E1, G1)
+			} else if toSquare == A1 {
+				return NewNormalMove(E1, C1)
+			}
+		} else if fromSquare == E8 && b.baseBoard.kings.IsMaskingBB(BBE8) {
+			if toSquare == H8 {
+				return NewNormalMove(E8, G8)
+			} else if toSquare == A8 {
+				return NewNormalMove(E8, C8)
+			}
+		}
+	}
+
+	return NewMove(fromSquare, toSquare, promotion, drop)
+}
+
+func (b *Board) toChess960(m *Move) *Move {
+	if m.FromSquare == E1 && b.baseBoard.kings.IsMaskingBB(BBE1) {
+		if m.ToSquare == G1 && !b.baseBoard.rooks.IsMaskingBB(BBG1) {
+			m := NewNormalMove(E1, H1)
+			return &m
+		} else if m.ToSquare == C1 && !b.baseBoard.rooks.IsMaskingBB(BBC1) {
+			m := NewNormalMove(E1, A1)
+			return &m
+		}
+	} else if m.FromSquare == E8 && b.baseBoard.kings.IsMaskingBB(BBE8) {
+		if m.ToSquare == G8 && !b.baseBoard.rooks.IsMaskingBB(BBG8) {
+			m := NewNormalMove(E8, H8)
+			return &m
+		} else if m.ToSquare == C8 && !b.baseBoard.rooks.IsMaskingBB(BBC8) {
+			m := NewNormalMove(E8, A8)
+			return &m
+		}
+	}
+
+	return m
 }
 
 func (b *Board) transpositionKey() string {

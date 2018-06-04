@@ -14,7 +14,7 @@ func main() {
 	fmt.Println("Current Board: ")
 	fmt.Println(board.Unicode(false, false))
 
-	for m := range board.GenerateAllPseudoLegalMoves() {
+	for m := range board.GeneratePseudoLegalMoves() {
 		fmt.Println("--> ", m.Uci())
 	}
 }
