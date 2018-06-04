@@ -824,13 +824,15 @@ func (b *Board) WasIntoCheck() bool {
 }
 
 func (b *Board) IsPseudoLegal(m *Move) bool {
-	if m.IsNull() {
+	// Null moves are not pseudo legal
+	if !m.IsNotNull() {
 		return false
 	}
 
-	//if m.IsDrop() {
-	//	return false // TODO: What is move drop?
-	//}
+	// Drop moves are not pseudo legal
+	if m.Drop != NoPiece {
+		return false
+	}
 
 	// Source square must not be vacant
 	pieceType := b.baseBoard.PieceTypeAt(m.FromSquare)
@@ -1177,24 +1179,24 @@ func (b *Board) Push(m *Move) {
 	b.epSquare = SquareNone
 
 	// Increment move counters
-	b.halfMoveClock += 1
+	b.halfMoveClock++
 	if b.turn == Black {
-		b.fullMoveNumber += 1
+		b.fullMoveNumber++
 	}
 
 	// On a null move, simply swap the turn
-	if m.IsNull() {
+	if !m.IsNotNull() {
 		b.turn = b.turn.Swap()
 		return
 	}
 
 	// Drops
-	// @TODO
-	// if m.IsDrop() {
-	// 	b.SetPieceAt(m.ToSquare, m.drop, b.turn)
-	// 	b.turn = b.turn.Swap()
-	// 	return
-	// }
+	if m.Drop != NoPiece {
+		p := NewPiece(m.Drop, b.turn)
+		b.baseBoard.SetPieceAt(m.ToSquare, &p, false)
+		b.turn = b.turn.Swap()
+		return
+	}
 
 	// Zero the half move clock
 	// @TODO

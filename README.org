@@ -14,7 +14,7 @@ This project is an attempt to incrementally port python-chess to golang, for lea
   - [x] Piece Types
   - [x] Squares
   - [x] Pieces
-  - [ ] Moves
+  - [x] Moves
   - [ ] Board
   - [ ] Chess960
   - [x] Bitboard functions
