@@ -728,6 +728,7 @@ func NewBoardStateFromBoard(b *Board) BoardState {
 	bs.queens = b.baseBoard.queens
 	bs.kings = b.baseBoard.kings
 
+	bs.occupiedColor = []Bitboard{BBVoid, BBVoid}
 	bs.occupiedColor[White] = b.baseBoard.occupiedColor[White]
 	bs.occupiedColor[Black] = b.baseBoard.occupiedColor[Black]
 	bs.occupied = b.baseBoard.occupied
@@ -1369,7 +1370,7 @@ func (b *Board) Push(m *Move) {
 	b.stack = append(b.stack, NewBoardStateFromBoard(b)) // Capture the board state
 	b.moveStack = append(b.moveStack, *m)
 
-	//move := b.toChess960(m)
+	// move := b.toChess960(m)
 
 	// Reset en passant square
 	epSquare := b.epSquare
@@ -2213,8 +2214,18 @@ func (b *Board) Status() uint64 {
 	return 0
 }
 
-func (b *Board) isSafe(kingSquare Square, sliderBlockers Bitboard, m *Move) bool {
-	return false
+func (b *Board) isSafe(king Square, blockers Bitboard, move *Move) bool {
+	if move.FromSquare == king {
+		if b.IsCastling(move) {
+			return true
+		} else {
+			return !b.baseBoard.IsAttackedBy(b.turn.Swap(), move.ToSquare)
+		}
+	} else if b.IsEnPassant(move) {
+		return b.baseBoard.PinMask(b.turn, move.FromSquare).IsMaskingBB(NewBitboardFromSquare(move.ToSquare)) && !b.epSkewered(king, move.FromSquare)
+	}
+
+	return !blockers.IsMaskingBB(NewBitboardFromSquare(move.FromSquare)) || bbRays[move.FromSquare][move.ToSquare].IsMaskingBB(NewBitboardFromSquare(king))
 }
 
 func (b *Board) epSkewered(kingSquare, capturer Square) bool {
@@ -2300,10 +2311,12 @@ func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 		}
 
 		kingMask := b.baseBoard.kings & b.baseBoard.occupiedColor[b.turn]
+
 		if kingMask != BBVoid {
 			king := Square(kingMask.Msb())
 			blockers := b.sliderBlockers(king)
 			checkers := b.baseBoard.AttackersMask(b.turn.Swap(), king)
+
 			if checkers != BBVoid {
 				for move := range b.generateEvasions(king, checkers, fromMask, toMask) {
 					if b.isSafe(king, blockers, &move) {
