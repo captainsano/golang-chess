@@ -9,7 +9,7 @@ This project is an attempt to incrementally port python-chess to golang, for lea
 
 ** Progress
 
-- Core [6/9] 
+- Core [7/9] 
   - [x] Colors
   - [x] Piece Types
   - [x] Squares
