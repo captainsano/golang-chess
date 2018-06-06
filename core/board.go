@@ -2289,6 +2289,80 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 	return ch
 }
 
+func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		defer close(ch)
+
+		if b.IsVariantEnd() {
+			return
+		}
+
+		kingMask := b.baseBoard.kings & b.baseBoard.occupiedColor[b.turn]
+		if kingMask != BBVoid {
+			king := Square(kingMask.Msb())
+			blockers := b.sliderBlockers(king)
+			checkers := b.baseBoard.AttackersMask(b.turn.Swap(), king)
+			if checkers != BBVoid {
+				for move := range b.generateEvasions(king, checkers, fromMask, toMask) {
+					if b.isSafe(king, blockers, &move) {
+						ch <- move
+					}
+				}
+			} else {
+				for move := range b.generatePseudoLegalMoves(fromMask, toMask) {
+					if b.isSafe(king, blockers, &move) {
+						ch <- move
+					}
+				}
+			}
+		} else {
+			for move := range b.generatePseudoLegalMoves(fromMask, toMask) {
+				ch <- move
+			}
+		}
+	}()
+
+	return ch
+}
+
+func (b *Board) generateLegalEp(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		defer close(ch)
+
+		if b.IsVariantEnd() {
+			return
+		}
+
+		for move := range b.generatePseudoLegalEp(fromMask, toMask) {
+			if !b.IsIntoCheck(&move) {
+				ch <- move
+			}
+		}
+	}()
+
+	return ch
+}
+
+func (b *Board) generateLegalCaptures(fromMask, toMask Bitboard) chan Move {
+	ch := make(chan Move)
+
+	go func() {
+		defer close(ch)
+		for move := range b.GenerateLegalMoves(fromMask, toMask&b.baseBoard.occupiedColor[b.turn.Swap()]) {
+			ch <- move
+		}
+		for move := range b.generateLegalEp(fromMask, toMask) {
+			ch <- move
+		}
+	}()
+
+	return ch
+}
+
 func (b *Board) attackedForKing(path, occupied Bitboard) bool {
 	for sq := range path.ScanReversed() {
 		if b.baseBoard.attackersMask(b.turn.Swap(), Square(sq), occupied) != BBVoid {
@@ -2474,26 +2548,4 @@ func (b *Board) transpositionKey() string {
 		b.cleanCastlingRights(),
 		b.epSquare,
 	)
-}
-
-func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
-	ch := make(chan Move)
-
-	go func() {
-
-		close(ch)
-	}()
-
-	return ch
-}
-
-func (b *Board) generateLegalEp(fromMask, toMask Bitboard) chan Move {
-	ch := make(chan Move)
-
-	go func() {
-
-		close(ch)
-	}()
-
-	return ch
 }
