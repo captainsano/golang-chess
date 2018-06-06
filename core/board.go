@@ -280,7 +280,7 @@ func (b *BaseBoard) RemovePieceAt(s Square) Piece {
 	return NewPiece(pt, color)
 }
 
-func (b *BaseBoard) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
+func (b *BaseBoard) setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
 	b.RemovePieceAt(s)
 
 	mask := NewBitboardFromSquare(s)
@@ -310,7 +310,7 @@ func (b *BaseBoard) _setPieceAt(s Square, pt PieceType, c Color, promoted bool) 
 
 func (b *BaseBoard) SetPieceAt(s Square, p *Piece, promoted bool) {
 	if p != nil {
-		b._setPieceAt(s, p.Type, p.Color, promoted)
+		b.setPieceAt(s, p.Type, p.Color, promoted)
 	} else {
 		b.RemovePieceAt(s)
 	}
@@ -439,6 +439,199 @@ func (b *BaseBoard) SetPieceMap(pm map[Square]*Piece) {
 		cp := NewPiece(p.Type, p.Color)
 		b.SetPieceAt(s, &cp, false)
 	}
+}
+
+func (b *BaseBoard) SetChess960Pos(sharnagl int) {
+	if sharnagl < 0 || sharnagl > 960 {
+		panic("invalid position")
+	}
+
+	n, bw := sharnagl/4, sharnagl%4
+	n, bb := n/4, n%4
+	n, q := n/6, n%6
+
+	n1, n2 := 0, 0
+	for n1 = 0; n1 < 4; n1++ {
+		n2 := n + (3-n1)*(4-n1)
+		if n1 < n2 && 1 <= n2 && n2 <= 4 {
+			break
+		}
+	}
+
+	// Bishops
+	bwFile := File(bw*2 + 1)
+	bbFile := File(bb * 2)
+	b.bishops = (NewBitboardFromFile(bwFile) | NewBitboardFromFile(bbFile)) & BBBackRanks
+
+	// Queens.
+	qFile := q
+	if util.MinInt(int(bwFile), int(bbFile)) <= qFile {
+		qFile += 1
+	}
+	if util.MaxInt(int(bwFile), int(bbFile)) <= qFile {
+		qFile += 1
+	}
+
+	b.queens = NewBitboardFromFile(File(qFile)) & BBBackRanks
+
+	used := map[int]bool{int(bwFile): true, int(bbFile): true, qFile: true}
+
+	// Knights.
+	b.knights = BBVoid
+	for i := 0; i < 8; i++ {
+		if !used[i] {
+			if n1 == 0 || n2 == 0 {
+				b.knights |= NewBitboardFromFile(File(i)) & BBBackRanks
+				used[i] = true
+			}
+			n1--
+			n2--
+		}
+	}
+
+	// RKR.
+	for i := 0; i < 8; i++ {
+		if !used[i] {
+			b.rooks = NewBitboardFromFile(File(i)) & BBBackRanks
+			used[i] = true
+			break
+		}
+	}
+	for i := 0; i < 8; i++ {
+		if !used[i] {
+			b.kings = NewBitboardFromFile(File(i)) & BBBackRanks
+			used[i] = true
+			break
+		}
+	}
+	for i := 0; i < 8; i++ {
+		if !used[i] {
+			b.rooks = NewBitboardFromFile(File(i)) & BBBackRanks
+			used[i] = true
+			break
+		}
+	}
+
+	// Finalize
+	b.pawns = BBRank2 | BBRank7
+	b.occupiedColor[White] = BBRank1 | BBRank2
+	b.occupiedColor[Black] = BBRank7 | BBRank8
+	b.occupied = BBRank1 | BBRank2 | BBRank7 | BBRank8
+	b.promoted = BBVoid
+}
+
+func (b *BaseBoard) Chess960Pos() int {
+	if !b.occupiedColor[White].IsMaskingBB(BBRank1 | BBRank2) {
+		return -1
+	}
+	if !b.occupiedColor[Black].IsMaskingBB(BBRank7 | BBRank8) {
+		return -1
+	}
+	if !b.pawns.IsMaskingBB(BBRank2 | BBRank7) {
+		return -1
+	}
+	if b.promoted != BBVoid {
+		return -1
+	}
+
+	if b.bishops.PopCount() != 4 {
+		return -1
+	}
+	if b.rooks.PopCount() != 4 {
+		return -1
+	}
+	if b.knights.PopCount() != 4 {
+		return -1
+	}
+	if b.queens.PopCount() != 2 {
+		return -1
+	}
+	if b.kings.PopCount() != 2 {
+		return -1
+	}
+
+	if (BBRank1&b.knights)<<56 != BBRank8&b.knights {
+		return -1
+	}
+	if (BBRank1&b.bishops)<<56 != BBRank8&b.bishops {
+		return -1
+	}
+	if (BBRank1&b.rooks)<<56 != BBRank8&b.rooks {
+		return -1
+	}
+	if (BBRank1&b.queens)<<56 != BBRank8&b.queens {
+		return -1
+	}
+	if (BBRank1&b.kings)<<56 != BBRank8&b.kings {
+		return -1
+	}
+
+	x := b.bishops & (2 + 8 + 32 + 128)
+	if x == BBVoid {
+		return -1
+	}
+	bs1 := x.Lsb() - 1 // 2
+	ccPos := bs1
+	x = b.bishops & (1 + 4 + 16 + 64)
+	if x != BBVoid {
+		return -1
+	}
+	bs2 := x.Lsb() * 2
+	ccPos += bs2
+
+	// Algorithm from ChessX, src/database/bitboard.cpp, r2254.
+	q := 0
+	qf := false
+	n0 := 0
+	n1 := 0
+	n0f := false
+	n1f := false
+	rf := 0
+	n0s := []int{0, 4, 7, 9}
+
+	for square := A1; square < H1+1; square++ {
+		bb := NewBitboardFromSquare(square)
+		if bb.IsMaskingBB(b.queens) {
+			qf = true
+		} else if bb.IsMaskingBB(b.rooks) || bb.IsMaskingBB(b.kings) {
+			if bb.IsMaskingBB(b.kings) {
+				if rf != 1 {
+					return -1
+				}
+			} else {
+				rf++
+			}
+
+			if !qf {
+				q++
+			}
+
+			if !n0f {
+				n0++
+			} else if !n1f {
+				n1++
+			}
+		} else if bb.IsMaskingBB(b.knights) {
+			if !qf {
+				q++
+			}
+
+			if !n0f {
+				n0f = true
+			} else if !n1f {
+				n1f = true
+			}
+		}
+	}
+
+	if n0 < 4 && n1f && qf {
+		ccPos += q * 16
+		krn := n0s[n0] + n1
+		ccPos += krn * 96
+		return ccPos
+	}
+
+	return -1
 }
 
 func (b *BaseBoard) Ascii() string {
@@ -927,7 +1120,7 @@ func (b *Board) IsGameOver(claimDraw bool) bool {
 
 	// stalemate or checkmate
 	hasLegalMoves := 0
-	for range b.GenerateLegalMoves() {
+	for range b.GenerateLegalMoves(BBAll, BBAll) {
 		hasLegalMoves++
 		break
 	}
@@ -990,7 +1183,7 @@ func (b *Board) Result(claimDraw bool) string {
 
 	// Stalemate
 	hasLegalMoves := 0
-	for range b.GenerateLegalMoves() {
+	for range b.GenerateLegalMoves(BBAll, BBAll) {
 		hasLegalMoves++
 		break
 	}
@@ -1009,7 +1202,7 @@ func (b *Board) IsCheckmate() bool {
 	}
 
 	hasLegalMoves := 0
-	for range b.GenerateLegalMoves() {
+	for range b.GenerateLegalMoves(BBAll, BBAll) {
 		hasLegalMoves++
 		break
 	}
@@ -1027,7 +1220,7 @@ func (b *Board) IsStalemate() bool {
 	}
 
 	hasLegalMoves := 0
-	for range b.GenerateLegalMoves() {
+	for range b.GenerateLegalMoves(BBAll, BBAll) {
 		hasLegalMoves++
 		break
 	}
@@ -1064,7 +1257,7 @@ func (b *Board) IsInsufficientMaterial() bool {
 func (b *Board) IsSeventyFiveMoves() bool {
 	if b.halfMoveClock >= 150 {
 		legalMoves := 0
-		for range b.GenerateLegalMoves() {
+		for range b.GenerateLegalMoves(BBAll, BBAll) {
 			legalMoves++
 			break
 		}
@@ -1114,7 +1307,7 @@ func (b *Board) CanClaimDraw() bool {
 func (b *Board) CanClaimFiftyMoves() bool {
 	if b.halfMoveClock >= 100 {
 		legalMoves := 0
-		for range b.GenerateLegalMoves() {
+		for range b.GenerateLegalMoves(BBAll, BBAll) {
 			legalMoves++
 			break
 		}
@@ -1154,7 +1347,7 @@ func (b *Board) CanClaimThreefoldRepetition() bool {
 	}
 
 	// The next legal move is a threefold repetition.
-	for move := range b.GenerateLegalMoves() {
+	for move := range b.GenerateLegalMoves(BBAll, BBAll) {
 		b.Push(&move)
 
 		if transpositions[b.transpositionKey()] >= 2 {
@@ -1268,19 +1461,19 @@ func (b *Board) Push(m *Move) {
 
 		if aSide {
 			if b.turn == White {
-				b.baseBoard._setPieceAt(C1, King, b.turn, false)
-				b.baseBoard._setPieceAt(D1, Rook, b.turn, false)
+				b.baseBoard.setPieceAt(C1, King, b.turn, false)
+				b.baseBoard.setPieceAt(D1, Rook, b.turn, false)
 			} else {
-				b.baseBoard._setPieceAt(C8, King, b.turn, false)
-				b.baseBoard._setPieceAt(D8, Rook, b.turn, false)
+				b.baseBoard.setPieceAt(C8, King, b.turn, false)
+				b.baseBoard.setPieceAt(D8, Rook, b.turn, false)
 			}
 		} else {
 			if b.turn == White {
-				b.baseBoard._setPieceAt(G1, King, b.turn, false)
-				b.baseBoard._setPieceAt(F1, Rook, b.turn, false)
+				b.baseBoard.setPieceAt(G1, King, b.turn, false)
+				b.baseBoard.setPieceAt(F1, Rook, b.turn, false)
 			} else {
-				b.baseBoard._setPieceAt(G8, King, b.turn, false)
-				b.baseBoard._setPieceAt(F8, Rook, b.turn, false)
+				b.baseBoard.setPieceAt(G8, King, b.turn, false)
+				b.baseBoard.setPieceAt(F8, Rook, b.turn, false)
 			}
 		}
 	}
@@ -1288,7 +1481,7 @@ func (b *Board) Push(m *Move) {
 	// Put the piece on the target square
 	if !castling && piece.Type != NoPiece {
 		wasPromoted := b.baseBoard.promoted.IsMaskingBB(toMask)
-		b.baseBoard._setPieceAt(m.ToSquare, piece.Type, b.turn, wasPromoted)
+		b.baseBoard.setPieceAt(m.ToSquare, piece.Type, b.turn, wasPromoted)
 
 		if capturedPieceType != NoPiece {
 			b.pushCapture(m, captureSquare, capturedPieceType, wasPromoted)
@@ -1426,10 +1619,6 @@ func (b *Board) ShredderFEN(enPassant string, promoted PieceType) string {
 	return fmt.Sprintf("%s %d %d", b.epd(true, enPassant, promoted), b.halfMoveClock, b.fullMoveNumber)
 }
 
-func (b *Board) epd(shredder bool, enPassant string, promoted PieceType) string {
-	return "-"
-}
-
 func (b *Board) SetFEN(fen string) {
 	parts := strings.Fields(fen)
 	if len(parts) != 6 {
@@ -1541,18 +1730,309 @@ func (b *Board) SetPieceMap(pm map[Square]*Piece) {
 	b.clearStack()
 }
 
-//func (b *Board) SetChess960Pos(sharnagl string) {
-//}
-//
-//func (b *Board) Chess960Pos(ignoreTurn, ignoreCastling, ignoreCounters bool) {
-//
-//}
+func (b *Board) SetChess960Pos(sharnagl int) {
+	b.baseBoard.SetChess960Pos(sharnagl)
+	b.chess960 = true
+	b.turn = White
+	b.castlingRights = b.baseBoard.rooks
+	b.epSquare = SquareNone
+	b.halfMoveClock = 0
+	b.fullMoveNumber = 1
 
-// @TODO:
-// func (b *Board) epdOperations(operations []string) {
+	b.clearStack()
+}
+
+func (b *Board) Chess960Pos(ignoreTurn, ignoreCastling, ignoreCounters bool) int {
+	if b.epSquare != SquareNone {
+		return -1
+	}
+
+	if !ignoreTurn {
+		if b.turn != White {
+			return -1
+		}
+	}
+
+	if !ignoreCastling {
+		if !b.cleanCastlingRights().IsMaskingBB(b.baseBoard.rooks) {
+			return -1
+		}
+	}
+
+	if !ignoreCounters {
+		if b.fullMoveNumber != 1 || b.halfMoveClock != 0 {
+			return -1
+		}
+	}
+
+	return b.baseBoard.Chess960Pos()
+}
+
+// func (b *Board) epdOperations(operations []struct {
+// 	opcode  string
+// 	operand *interface{}
+// }) string {
 // 	epd := []string{}
 // 	firstOp := true
+// 	for _, op := range operations {
+// 		if !firstOp {
+// 			epd = append(epd, "")
+// 		}
+
+// 		firstOp = false
+
+// 		if op.operand == nil {
+// 			epd = append(epd, ";")
+// 			continue
+// 		}
+
+// 		opcode, operand := op.opcode, *op.operand
+
+// 		// Value is empty
+// 		if operand == nil {
+// 			epd = append(epd, ";")
+// 			continue
+// 		}
+
+// 		// Value is a move
+// 		operandMap, ok := operand.(map[string]string)
+// 		if ok {
+// 			from, fok := operandMap["from_square"]
+// 			to, tok := operandMap["to_square"]
+// 			promotion, pok := operandMap["promotion"]
+// 			if fok && tok && pok {
+// 				epd = append(epd, " ")
+// 				epd = append(epd, b.San(operandMap))
+// 				epd = append(epd, ";")
+// 				continue
+// 			}
+// 		}
+
+// 		operandStr, ok := operand.(string)
+// 		if ok {
+// 			// Value is int
+// 			epdInt, err := strconv.ParseInt(operandStr, 10, 0)
+// 			if err == nil {
+// 				epd = append(epd, " ")
+// 				epd = append(epd, operandStr)
+// 				epd = append(epd, ";")
+// 				continue
+// 			}
+
+// 			// Value is float
+// 			epdFloat, err := strconv.ParseFloat(operandStr, 0)
+// 			if err == nil {
+// 				epd = append(epd, " ")
+// 				epd = append(epd, operandStr)
+// 				epd = append(epd, ";")
+// 				continue
+// 			}
+// 		}
+
+// 		// value is a slice of moves
+// 		operandMoves, ok := operand.([]Move)
+// 		if ok {
+// 			position := b
+// 			if opcode == "pv" {
+// 				_b := NewBoard(b.ShredderFEN("legal", NoPiece), false)
+// 				position = &_b
+// 			}
+
+// 			firstMove := operandMoves[0]
+// 			if firstMove.FromSquare != SquareNone && firstMove.ToSquare != SquareNone && firstMove.Promotion != NoPiece {
+// 				epd = append(epd, " ")
+// 				epd = append(epd, position.San(firstMove))
+// 				if opcode == "pv" {
+// 					position.Push(firstMove)
+// 				}
+
+// 				for _, move := range operandMoves[1:] {
+// 					epd = append(epd, " ")
+// 					epd = append(epd, position.San(move))
+// 					if opcode == "pv" {
+// 						position.Push(move)
+// 					}
+// 				}
+// 			}
+
+// 			epd = append(epd, ";")
+// 			continue
+// 		}
+
+// 		operandStr, ok = operand.(string)
+// 		if ok {
+// 			epd = append(epd, " \"")
+// 			epd = append(epd, strings.Replace(strings.Replace(strings.Replace(strings.Replace(operandStr, "\r", "", -1), "\n", " ", -1), "\\", "\\\\", -1), ";", "\\s", -1))
+// 			epd = append(epd, "\";")
+// 		}
+// 	}
+
+// 	return strings.Join(epd, "")
 // }
+
+func (b *Board) epd(shredder bool, enPassant string, promoted PieceType, epdOperations ...interface{}) string {
+	epd := []string{}
+
+	epd = append(epd, b.baseBoard.FEN(promoted != NoPiece))
+	if b.turn == White {
+		epd = append(epd, "w")
+	} else {
+		epd = append(epd, "b")
+	}
+	if shredder {
+		epd = append(epd, b.CastlingShredderFen())
+	} else {
+		epd = append(epd, b.CastlingXFEN())
+	}
+
+	if enPassant == "fen" {
+		if b.epSquare != SquareNone {
+			epd = append(epd, b.epSquare.Name())
+		} else {
+			epd = append(epd, "-")
+		}
+	} else if enPassant == "xfen" {
+		if b.hasPseudoLegalEnPassant() {
+			epd = append(epd, b.epSquare.Name())
+		} else {
+			epd = append(epd, "-")
+		}
+	} else {
+		if b.hasLegalEnPassant() {
+			epd = append(epd, b.epSquare.Name())
+		} else {
+			epd = append(epd, "-")
+		}
+	}
+
+	if len(epdOperations) > 0 {
+		// @TODO: EPD Operations
+	}
+
+	return strings.Join(epd, " ")
+}
+
+// TODO: Parse EPD ops
+
+// TODO: Set EPD
+
+func (b *Board) San(move *Move) string {
+	return b.algebraic(move, false)
+}
+
+func (b *Board) algebraic(move *Move, long bool) string {
+	if !move.IsNotNull() {
+		return "--"
+	}
+
+	san := ""
+
+	// Look ahead for check/checkmate
+	b.Push(move)
+	isCheck := b.IsCheck()
+	isCheckmate := (isCheck && b.IsCheckmate()) || b.IsVariantLoss() || b.IsVariantWin()
+	b.Pop()
+
+	// Drops
+	if move.Drop != NoPiece {
+		san = ""
+		if move.Drop != Pawn {
+			san = strings.ToUpper(move.Drop.Symbol())
+		}
+		san += "@" + move.ToSquare.Name()
+	}
+
+	// Castling.
+	if b.IsCastling(move) {
+		if move.ToSquare < move.FromSquare {
+			san = "O-O-O"
+		} else {
+			san = "O-O"
+		}
+	}
+
+	if move.Drop != NoPiece || b.IsCastling(move) {
+		if isCheckmate {
+			return san + "#"
+		}
+		if isCheck {
+			return san + "+"
+		}
+		return san
+	}
+
+	piece := b.baseBoard.PieceTypeAt(move.FromSquare)
+	capture := b.IsCapture(move)
+
+	if piece == Pawn {
+		san = ""
+	} else {
+		san = strings.ToUpper(piece.Symbol())
+	}
+
+	if long {
+		san += move.FromSquare.Name()
+	} else if piece != Pawn {
+		// Get ambiguous move candidates.
+		// Relevant candidates: not exactly the current move,
+		// but to the same square.
+		others := BBVoid
+		fromMask := b.baseBoard.PieceMask(piece, b.turn)
+		fromMask &= ^NewBitboardFromSquare(move.FromSquare)
+		toMask := NewBitboardFromSquare(move.ToSquare)
+		for candidate := range b.GenerateLegalMoves(fromMask, toMask) {
+			others |= NewBitboardFromSquare(candidate.FromSquare)
+		}
+
+		// Disambiguate.
+		if others != BBVoid {
+			row, column := false, false
+
+			if others.IsMaskingBB(NewBitboardFromRank(move.FromSquare.Rank())) {
+				column = true
+			}
+
+			if others.IsMaskingBB(NewBitboardFromFile(move.FromSquare.File())) {
+				row = true
+			} else {
+				column = true
+			}
+
+			if column {
+				san += move.FromSquare.File().Name()
+			}
+			if row {
+				san += move.FromSquare.Rank().Name()
+			}
+		}
+	} else if capture {
+		san += move.FromSquare.File().Name()
+	}
+
+	// Captures
+	if capture {
+		san += "x"
+	} else if long {
+		san += "-"
+	}
+
+	// Destination square
+	san += move.ToSquare.Name()
+
+	// Promotion
+	if move.Promotion != NoPiece {
+		san += "=" + strings.ToUpper(move.Promotion.Symbol())
+	}
+
+	// Add check or checkmate suffix.
+	if isCheckmate {
+		san += "#"
+	} else if isCheck {
+		san += "+"
+	}
+
+	return san
+}
 
 func (b *Board) Ascii() string {
 	// TODO: Add other FEN params
@@ -1647,11 +2127,93 @@ func (b *Board) cleanCastlingRights() Bitboard {
 	return blackASide | blackHSide | whiteASide | whiteHSide
 }
 
-func (b *Board) isSafe(kingSquare Square, sliderBlockers Bitboard, m *Move) bool {
+func (b *Board) HasCastlingRights(c Color) bool {
+	backrank := BBRank1
+	if c == Black {
+		backrank = BBRank8
+	}
+	return b.cleanCastlingRights().IsMaskingBB(backrank)
+}
+
+func (b *Board) HasKingsideCastlingRights(c Color) bool {
+	backrank := BBRank1
+	if c == Black {
+		backrank = BBRank8
+	}
+	kingMask := b.baseBoard.kings & b.baseBoard.occupiedColor[c] & backrank & ^b.baseBoard.promoted
+	if kingMask == BBVoid {
+		return false
+	}
+
+	castlingRights := b.cleanCastlingRights() & backrank
+	for castlingRights != BBVoid {
+		rook := castlingRights & -castlingRights
+
+		if rook > kingMask {
+			return true
+		}
+
+		castlingRights = castlingRights & (castlingRights - 1)
+	}
+
 	return false
 }
 
-func (b *Board) IsEnPassant(m *Move) bool {
+func (b *Board) HasQueensideCastlingRights(c Color) bool {
+	backrank := BBRank1
+	if c == Black {
+		backrank = BBRank8
+	}
+	kingMask := b.baseBoard.kings & b.baseBoard.occupiedColor[c] & backrank & ^b.baseBoard.promoted
+	if kingMask == BBVoid {
+		return false
+	}
+
+	castlingRights := b.cleanCastlingRights() & backrank
+	for castlingRights != BBVoid {
+		rook := castlingRights & -castlingRights
+
+		if rook < kingMask {
+			return true
+		}
+
+		castlingRights = castlingRights & (castlingRights - 1)
+	}
+
+	return false
+}
+
+func (b *Board) HasChess960CastlingRights() bool {
+	chess960 := b.chess960
+	b.chess960 = true
+	castlingRights := b.cleanCastlingRights()
+	b.chess960 = chess960
+
+	// Standard chess castling rights can only be on the standard
+	// starting rook squares.
+	if castlingRights.IsMaskingBB(^BBCorners) {
+		return true
+	}
+
+	// If there are any castling rights in standard chess, the king must be
+	// on e1 or e8.
+	if castlingRights.IsMaskingBB(BBRank1) && (b.baseBoard.occupiedColor[White]&b.baseBoard.kings&BBE1) == BBVoid {
+		return true
+	}
+
+	if castlingRights.IsMaskingBB(BBRank8) && (b.baseBoard.occupiedColor[Black]&b.baseBoard.kings&BBE8) == BBVoid {
+		return true
+	}
+
+	return false
+}
+
+// TODO: Status
+func (b *Board) Status() uint64 {
+	return 0
+}
+
+func (b *Board) isSafe(kingSquare Square, sliderBlockers Bitboard, m *Move) bool {
 	return false
 }
 
@@ -1809,6 +2371,35 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 	return ch
 }
 
+func (b *Board) IsEnPassant(move *Move) bool {
+	return b.epSquare == move.ToSquare &&
+		b.baseBoard.pawns.IsMaskingBB(NewBitboardFromSquare(move.FromSquare)) &&
+		(util.AbsInt(int(move.ToSquare)-int(move.FromSquare)) == 7 || util.AbsInt(int(move.ToSquare)-int(move.FromSquare)) == 9) &&
+		!b.baseBoard.occupied.IsMaskingBB(NewBitboardFromSquare(move.ToSquare))
+}
+
+func (b *Board) IsCapture(move *Move) bool {
+	return NewBitboardFromSquare(move.ToSquare).IsMaskingBB(b.baseBoard.occupiedColor[b.turn.Swap()]) || b.IsEnPassant(move)
+}
+
+func (b *Board) IsZeroing(move *Move) bool {
+	return NewBitboardFromSquare(move.FromSquare).IsMaskingBB(b.baseBoard.pawns) ||
+		NewBitboardFromSquare(move.ToSquare).IsMaskingBB(b.baseBoard.occupiedColor[b.turn.Swap()])
+}
+
+func (b *Board) isIrreversible(move *Move) bool {
+	backrank := BBRank1
+	if b.turn == Black {
+		backrank = BBRank8
+	}
+	cr := b.cleanCastlingRights() & backrank
+
+	return b.IsZeroing(move) ||
+		(cr != BBVoid && (NewBitboardFromSquare(move.FromSquare)&b.baseBoard.kings & ^b.baseBoard.promoted) != BBVoid) ||
+		cr.IsMaskingBB(NewBitboardFromSquare(move.FromSquare)) ||
+		cr.IsMaskingBB(NewBitboardFromSquare(move.ToSquare))
+}
+
 func (b *Board) IsCastling(m *Move) bool {
 	if b.baseBoard.kings.IsMaskingBB(NewBitboardFromSquare(m.FromSquare)) {
 		diff := int(m.FromSquare.File()) - int(m.ToSquare.File())
@@ -1816,6 +2407,14 @@ func (b *Board) IsCastling(m *Move) bool {
 	}
 
 	return false
+}
+
+func (b *Board) IsKingsideCastling(move *Move) bool {
+	return b.IsCastling(move) && move.ToSquare.File() > move.FromSquare.File()
+}
+
+func (b *Board) IsQueensideCastling(move *Move) bool {
+	return b.IsCastling(move) && move.ToSquare.File() < move.FromSquare.File()
 }
 
 func (b *Board) fromChess960(chess960 bool, fromSquare, toSquare Square, promotion, drop PieceType) Move {
@@ -1877,7 +2476,7 @@ func (b *Board) transpositionKey() string {
 	)
 }
 
-func (b *Board) GenerateLegalMoves() chan Move {
+func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
 	go func() {
@@ -1897,9 +2496,4 @@ func (b *Board) generateLegalEp(fromMask, toMask Bitboard) chan Move {
 	}()
 
 	return ch
-}
-
-func (b *Board) isIrreversible(m *Move) bool {
-	// @TODO
-	return false
 }
