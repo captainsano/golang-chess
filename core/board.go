@@ -1405,11 +1405,11 @@ func (b *Board) pushCapture(m *Move, captureSquare Square, pt PieceType, wasProm
 	// Noop
 }
 
-func (b *Board) Push(m *Move) {
+func (b *Board) Push(move *Move) {
 	b.stack = append(b.stack, NewBoardStateFromBoard(b)) // Capture the board state
-	b.moveStack = append(b.moveStack, *m)
+	b.moveStack = append(b.moveStack, *move)             // TODO: Make a defensive copy
 
-	// move := b.toChess960(m)
+	m := b.toChess960(move)
 
 	// Reset en passant square
 	epSquare := b.epSquare
@@ -1436,10 +1436,9 @@ func (b *Board) Push(m *Move) {
 	}
 
 	// Zero the half move clock
-	// @TODO
-	// if b.isZeroing(m) {
-	// 	b.halfMoveClock = 0
-	// }
+	if b.isZeroing(m) {
+		b.halfMoveClock = 0
+	}
 
 	fromMask := NewBitboardFromSquare(m.FromSquare)
 	toMask := NewBitboardFromSquare(m.ToSquare)
@@ -1492,8 +1491,12 @@ func (b *Board) Push(m *Move) {
 	}
 
 	// Castling
-	castling := piece.Type == King && b.baseBoard.occupiedColor[b.turn].IsMaskingBB(toMask)
-	if castling {
+	castling := BBVoid
+	if piece.Type == King {
+		castling = b.baseBoard.occupiedColor[b.turn] & toMask
+	}
+
+	if castling != BBVoid {
 		aSide := m.ToSquare.File() < m.FromSquare.File()
 
 		b.baseBoard.RemovePieceAt(m.FromSquare)
@@ -1519,7 +1522,7 @@ func (b *Board) Push(m *Move) {
 	}
 
 	// Put the piece on the target square
-	if !castling && piece.Type != NoPiece {
+	if castling == BBVoid && piece.Type != NoPiece {
 		wasPromoted := b.baseBoard.promoted.IsMaskingBB(toMask)
 		b.baseBoard.setPieceAt(m.ToSquare, piece.Type, b.turn, wasPromoted)
 
@@ -2257,9 +2260,9 @@ func (b *Board) isSafe(king Square, blockers Bitboard, move *Move) bool {
 	if move.FromSquare == king {
 		if b.IsCastling(move) {
 			return true
-		} else {
-			return !b.baseBoard.IsAttackedBy(b.turn.Swap(), move.ToSquare)
 		}
+
+		return !b.baseBoard.IsAttackedBy(b.turn.Swap(), move.ToSquare)
 	} else if b.IsEnPassant(move) {
 		return b.baseBoard.PinMask(b.turn, move.FromSquare).IsMaskingBB(NewBitboardFromSquare(move.ToSquare)) && !b.epSkewered(king, move.FromSquare)
 	}
@@ -2510,7 +2513,7 @@ func (b *Board) IsCapture(move *Move) bool {
 	return NewBitboardFromSquare(move.ToSquare).IsMaskingBB(b.baseBoard.occupiedColor[b.turn.Swap()]) || b.IsEnPassant(move)
 }
 
-func (b *Board) IsZeroing(move *Move) bool {
+func (b *Board) isZeroing(move *Move) bool {
 	return NewBitboardFromSquare(move.FromSquare).IsMaskingBB(b.baseBoard.pawns) ||
 		NewBitboardFromSquare(move.ToSquare).IsMaskingBB(b.baseBoard.occupiedColor[b.turn.Swap()])
 }
@@ -2522,7 +2525,7 @@ func (b *Board) isIrreversible(move *Move) bool {
 	}
 	cr := b.cleanCastlingRights() & backrank
 
-	return b.IsZeroing(move) ||
+	return b.isZeroing(move) ||
 		(cr != BBVoid && (NewBitboardFromSquare(move.FromSquare)&b.baseBoard.kings & ^b.baseBoard.promoted) != BBVoid) ||
 		cr.IsMaskingBB(NewBitboardFromSquare(move.FromSquare)) ||
 		cr.IsMaskingBB(NewBitboardFromSquare(move.ToSquare))

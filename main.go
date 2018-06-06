@@ -29,8 +29,6 @@ func main() {
 	printAfterMove(&board, "f8e7")
 	printAfterMove(&board, "e1g1")
 	printAfterMove(&board, "e8g8")
-
-	// TODO: Castling not updating the rook position
 }
 
 func printAfterMove(board *Board, uci string) {
