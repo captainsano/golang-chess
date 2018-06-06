@@ -48,6 +48,22 @@ func NewBaseBoard(fen string) BaseBoard {
 	return b
 }
 
+func NewBaseBoardFromBaseBoard(bb *BaseBoard) BaseBoard {
+	b := BaseBoard{}
+	b.pawns = bb.pawns
+	b.knights = bb.knights
+	b.bishops = bb.bishops
+	b.rooks = bb.rooks
+	b.queens = bb.queens
+	b.kings = bb.kings
+	b.promoted = bb.promoted
+	b.occupiedColor = []Bitboard{BBVoid, BBVoid}
+	copy(b.occupiedColor, bb.occupiedColor)
+	b.occupied = bb.occupied
+
+	return b
+}
+
 func (b *BaseBoard) Reset() {
 	b.pawns = BBRank2 | BBRank7
 	b.knights = BBB1 | BBG1 | BBB8 | BBG8
@@ -327,7 +343,7 @@ func (b *BaseBoard) FEN(promoted bool) string {
 			empty++
 		} else {
 			if empty > 0 {
-				builder = append(builder, string(empty))
+				builder = append(builder, strconv.Itoa(empty))
 				empty = 0
 			}
 
@@ -340,7 +356,7 @@ func (b *BaseBoard) FEN(promoted bool) string {
 
 		if NewBitboardFromSquare(square).IsMaskingBB(BBFileH) {
 			if empty > 0 {
-				builder = append(builder, string(empty))
+				builder = append(builder, strconv.Itoa(empty))
 				empty = 0
 			}
 
@@ -796,6 +812,32 @@ func NewBoard(fen string, chess960 bool) Board {
 	return board
 }
 
+func NewBoardFromBoard(b *Board) Board {
+	board := Board{}
+
+	copy(board.aliases, b.aliases)
+	board.uciVariant = b.uciVariant
+	board.startingFen = b.startingFen
+	board.connectedKings = b.connectedKings
+	board.oneKing = b.oneKing
+	board.capturesCompulsory = b.capturesCompulsory
+
+	board.chess960 = b.chess960
+
+	copy(board.moveStack, b.moveStack)
+	copy(board.stack, b.stack)
+
+	board.baseBoard = NewBaseBoardFromBaseBoard(&b.baseBoard)
+
+	board.turn = b.turn
+	board.castlingRights = b.castlingRights
+	board.epSquare = b.epSquare
+	board.halfMoveClock = b.halfMoveClock
+	b.fullMoveNumber = b.fullMoveNumber
+
+	return board
+}
+
 func (b *Board) Reset() {
 	b.turn = White
 	b.castlingRights = BBCorners
@@ -837,7 +879,9 @@ func (b *Board) SetPieceAt(s Square, p *Piece, promoted bool) {
 func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
+		defer close(ch)
+
 		ourPieces := b.baseBoard.occupiedColor[b.turn]
 
 		// Generate piece moves
@@ -859,7 +903,6 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 		// The remaining moves are pawn moves
 		pawns := b.baseBoard.pawns & b.baseBoard.occupiedColor[b.turn] & fromMask
 		if pawns == BBVoid {
-			close(ch)
 			return
 		}
 
@@ -927,9 +970,7 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 				ch <- move
 			}
 		}
-
-		close(ch)
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -941,14 +982,14 @@ func (b *Board) GeneratePseudoLegalMoves() chan Move {
 func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
+		defer close(ch)
+
 		if (b.epSquare == SquareNone) || !NewBitboardFromSquare(b.epSquare).IsMaskingBB(toMask) {
-			close(ch)
 			return
 		}
 
 		if NewBitboardFromSquare(b.epSquare).IsMaskingBB(b.baseBoard.occupied) {
-			close(ch)
 			return
 		}
 
@@ -962,9 +1003,7 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 		for capturer := range capturers.ScanReversed() {
 			ch <- NewNormalMove(Square(capturer), b.epSquare)
 		}
-
-		close(ch)
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -972,7 +1011,9 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 func (b *Board) generatePseudoLegalCaptures(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
+		defer close(ch)
+
 		for m := range b.generatePseudoLegalMoves(fromMask, (toMask & b.baseBoard.occupiedColor[b.turn.Swap()])) {
 			ch <- m
 		}
@@ -980,9 +1021,7 @@ func (b *Board) generatePseudoLegalCaptures(fromMask, toMask Bitboard) chan Move
 		for m := range b.generatePseudoLegalEp(fromMask, toMask) {
 			ch <- m
 		}
-
-		close(ch)
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -2254,7 +2293,9 @@ func (b *Board) epSkewered(kingSquare, capturer Square) bool {
 func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
+		defer close(ch)
+
 		sliders := checkers & (b.baseBoard.bishops | b.baseBoard.rooks | b.baseBoard.queens)
 
 		attacked := BBVoid
@@ -2293,9 +2334,7 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 				}
 			}
 		}
-
-		close(ch)
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -2303,7 +2342,7 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
 		defer close(ch)
 
 		if b.IsVariantEnd() {
@@ -2335,7 +2374,7 @@ func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 				ch <- move
 			}
 		}
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -2343,7 +2382,7 @@ func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 func (b *Board) generateLegalEp(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
 		defer close(ch)
 
 		if b.IsVariantEnd() {
@@ -2355,7 +2394,7 @@ func (b *Board) generateLegalEp(fromMask, toMask Bitboard) chan Move {
 				ch <- move
 			}
 		}
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
@@ -2387,6 +2426,10 @@ func (b *Board) attackedForKing(path, occupied Bitboard) bool {
 }
 
 func (b *Board) castlingUncoversRankAttack(rookMask Bitboard, kingTo Square) Bitboard {
+	if kingTo == SquareNone {
+		return BBVoid
+	}
+
 	rankPieces := rankMasks[kingTo] & (b.baseBoard.occupied ^ rookMask)
 	sliders := (b.baseBoard.queens | b.baseBoard.rooks) & b.baseBoard.occupiedColor[b.turn.Swap()]
 	return rankAttacks[kingTo][rankPieces] & sliders
@@ -2395,9 +2438,10 @@ func (b *Board) castlingUncoversRankAttack(rookMask Bitboard, kingTo Square) Bit
 func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 	ch := make(chan Move)
 
-	go func() {
+	go func(b Board) {
+		defer close(ch)
+
 		if b.IsVariantEnd() {
-			close(ch)
 			return
 		}
 
@@ -2409,7 +2453,6 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 		kingMask := b.baseBoard.occupiedColor[b.turn] & b.baseBoard.kings & ^b.baseBoard.promoted & backRank & fromMask
 		kingMask = kingMask & -kingMask
 		if kingMask == BBVoid || b.attackedForKing(kingMask, b.baseBoard.occupied) {
-			close(ch)
 			return
 		}
 
@@ -2438,7 +2481,7 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 			} else {
 				kingTo := Square(bbG.Msb())
 				if !rookMask.IsMaskingBB(bbF) {
-					emptyForRook = bbBetween[candidate][bbF] | bbF
+					emptyForRook = bbBetween[candidate][bbF.Msb()] | bbF
 				}
 				if !kingMask.IsMaskingBB(bbG) {
 					emptyForKing = bbBetween[kingMask.Msb()][kingTo] | bbG
@@ -2451,9 +2494,7 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 				ch <- b.fromChess960(b.chess960, Square(kingMask.Msb()), Square(candidate), NoPiece, NoPiece)
 			}
 		}
-
-		close(ch)
-	}()
+	}(NewBoardFromBoard(b))
 
 	return ch
 }
