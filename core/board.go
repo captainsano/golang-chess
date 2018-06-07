@@ -296,6 +296,10 @@ func (b *BaseBoard) RemovePieceAt(s Square) Piece {
 	return NewPiece(pt, color)
 }
 
+func (b *Board) PieceAt(s Square) *Piece {
+	return b.baseBoard.PieceAt(s)
+}
+
 func (b *BaseBoard) setPieceAt(s Square, pt PieceType, c Color, promoted bool) {
 	b.RemovePieceAt(s)
 
@@ -785,7 +789,11 @@ type Board struct {
 	fullMoveNumber uint
 }
 
-func NewBoard(fen string, chess960 bool) Board {
+func NewBoard(chess960 bool) Board {
+	return NewBoardFromFEN("8/8/8/8/8/8/8/8 w - - 0 1", chess960)
+}
+
+func NewBoardFromFEN(fen string, chess960 bool) Board {
 	board := Board{}
 
 	board.aliases = []string{"Standard", "Chess", "Classical", "Normal"}
@@ -812,6 +820,10 @@ func NewBoard(fen string, chess960 bool) Board {
 	return board
 }
 
+func NewDefaultBoard() Board {
+	return NewBoardFromFEN(StartingFEN, false)
+}
+
 func NewBoardFromBoard(b *Board) Board {
 	board := Board{}
 
@@ -836,6 +848,19 @@ func NewBoardFromBoard(b *Board) Board {
 	b.fullMoveNumber = b.fullMoveNumber
 
 	return board
+}
+
+func (a *Board) Equal(b *Board) bool {
+	// TODO: Improve this with value comparisons
+	return a.transpositionKey() == b.transpositionKey()
+}
+
+func (b *Board) Turn() Color {
+	return b.turn
+}
+
+func (b *Board) CastlingRights() Bitboard {
+	return b.castlingRights
 }
 
 func (b *Board) Reset() {
@@ -1465,7 +1490,7 @@ func (b *Board) Push(move *Move) {
 	capturedPieceType := b.baseBoard.PieceTypeAt(m.ToSquare)
 
 	// Update castling rights
-	b.castlingRights = b.cleanCastlingRights() & ^toMask & ^fromMask
+	b.castlingRights = b.CleanCastlingRights() & ^toMask & ^fromMask
 	if piece.Type == King && !promoted {
 		if b.turn == White {
 			b.castlingRights &= ^BBRank1
@@ -1584,7 +1609,7 @@ func (b *Board) Peek() *Move {
 }
 
 func (b *Board) CastlingShredderFen() string {
-	castlingRights := b.cleanCastlingRights()
+	castlingRights := b.CleanCastlingRights()
 	if castlingRights == BBVoid {
 		return "-"
 	}
@@ -1596,7 +1621,7 @@ func (b *Board) CastlingShredderFen() string {
 	}
 
 	for s := range (castlingRights & BBRank8).ScanReversed() {
-		builder = append(builder, strings.ToUpper(Square(s).File().Name()))
+		builder = append(builder, Square(s).File().Name())
 	}
 
 	return strings.Join(builder, "")
@@ -1617,7 +1642,7 @@ func (b *Board) CastlingXFEN() string {
 			backRank = BBRank1
 		}
 
-		for rookSquare := range (b.cleanCastlingRights() & backRank).ScanReversed() {
+		for rookSquare := range (b.CleanCastlingRights() & backRank).ScanReversed() {
 			rookFile := Square(rookSquare).File()
 			aSide := rookFile < kingFile
 
@@ -1629,7 +1654,7 @@ func (b *Board) CastlingXFEN() string {
 			}
 
 			for other := range otherRooks.ScanReversed() {
-				if Square(other).File() < rookFile {
+				if (Square(other).File() < rookFile) == aSide {
 					ch = rookFile.Name()
 					break
 				}
@@ -1741,28 +1766,25 @@ func (b *Board) setCastlingFEN(castlingFen string) {
 	b.castlingRights = BBVoid
 
 	for _, flag := range strings.Split(castlingFen, "") {
-		color := White
+		color := Black
 		if flag == strings.ToUpper(flag) {
 			color = White
-		} else {
-			color = Black
 		}
 
 		flag = strings.ToLower(flag)
-		backRank := BBVoid
+		backRank := BBRank8
 		if color == White {
 			backRank = BBRank1
-		} else {
-			backRank = BBRank8
 		}
+
 		rooks := b.baseBoard.occupiedColor[color] & b.baseBoard.rooks & backRank
 		kingSquare := b.baseBoard.King(color)
 
 		if flag == "q" {
 			if kingSquare != SquareNone && rooks.Lsb() < int(kingSquare) {
-				b.castlingRights |= rooks & ^rooks
+				b.castlingRights |= rooks & -rooks
 			} else {
-				b.castlingRights |= BBFileA ^ backRank
+				b.castlingRights |= BBFileA & backRank
 			}
 		} else if flag == "k" {
 			rook := rooks.Msb()
@@ -1813,7 +1835,7 @@ func (b *Board) Chess960Pos(ignoreTurn, ignoreCastling, ignoreCounters bool) int
 	}
 
 	if !ignoreCastling {
-		if !b.cleanCastlingRights().IsMaskingBB(b.baseBoard.rooks) {
+		if !b.CleanCastlingRights().IsMaskingBB(b.baseBoard.rooks) {
 			return -1
 		}
 	}
@@ -2125,7 +2147,7 @@ func (b *Board) sliderBlockers(kingSquare Square) Bitboard {
 	return blockers & b.baseBoard.occupiedColor[b.turn]
 }
 
-func (b *Board) cleanCastlingRights() Bitboard {
+func (b *Board) CleanCastlingRights() Bitboard {
 	if len(b.stack) > 0 {
 		return b.castlingRights
 	}
@@ -2140,13 +2162,15 @@ func (b *Board) cleanCastlingRights() Bitboard {
 
 		if (b.baseBoard.occupiedColor[White] & b.baseBoard.kings & ^b.baseBoard.promoted & BBE1) == BBVoid {
 			whiteCastling = BBVoid
-		} else if (b.baseBoard.occupiedColor[White] & b.baseBoard.kings & ^b.baseBoard.promoted & BBE1) == BBVoid {
+		}
+		if (b.baseBoard.occupiedColor[Black] & b.baseBoard.kings & ^b.baseBoard.promoted & BBE8) == BBVoid {
 			blackCastling = BBVoid
 		}
 
 		return whiteCastling | blackCastling
 	}
 
+	// Thinks must be on the back rank
 	whiteKingMask := b.baseBoard.occupiedColor[White] & b.baseBoard.kings & BBRank1 & ^b.baseBoard.promoted
 	blackKingMask := b.baseBoard.occupiedColor[Black] & b.baseBoard.kings & BBRank8 & ^b.baseBoard.promoted
 	if whiteKingMask == BBVoid {
@@ -2157,7 +2181,7 @@ func (b *Board) cleanCastlingRights() Bitboard {
 	}
 
 	// There are only two ways of castling, a-side and h-side and the king must be between the rooks
-	whiteASide := whiteCastling & ^whiteCastling
+	whiteASide := whiteCastling & -whiteCastling
 	whiteHSide := BBVoid
 	if whiteCastling != BBVoid {
 		whiteHSide = NewBitboardFromSquare(Square(whiteCastling.Msb()))
@@ -2170,7 +2194,7 @@ func (b *Board) cleanCastlingRights() Bitboard {
 		whiteHSide = BBVoid
 	}
 
-	blackASide := blackCastling & ^blackCastling
+	blackASide := blackCastling & -blackCastling
 	blackHSide := BBVoid
 	if blackCastling != BBVoid {
 		blackHSide = NewBitboardFromSquare(Square(blackCastling.Msb()))
@@ -2191,7 +2215,7 @@ func (b *Board) HasCastlingRights(c Color) bool {
 	if c == Black {
 		backrank = BBRank8
 	}
-	return b.cleanCastlingRights().IsMaskingBB(backrank)
+	return b.CleanCastlingRights().IsMaskingBB(backrank)
 }
 
 func (b *Board) HasKingsideCastlingRights(c Color) bool {
@@ -2204,7 +2228,7 @@ func (b *Board) HasKingsideCastlingRights(c Color) bool {
 		return false
 	}
 
-	castlingRights := b.cleanCastlingRights() & backrank
+	castlingRights := b.CleanCastlingRights() & backrank
 	for castlingRights != BBVoid {
 		rook := castlingRights & -castlingRights
 
@@ -2228,7 +2252,7 @@ func (b *Board) HasQueensideCastlingRights(c Color) bool {
 		return false
 	}
 
-	castlingRights := b.cleanCastlingRights() & backrank
+	castlingRights := b.CleanCastlingRights() & backrank
 	for castlingRights != BBVoid {
 		rook := castlingRights & -castlingRights
 
@@ -2245,7 +2269,7 @@ func (b *Board) HasQueensideCastlingRights(c Color) bool {
 func (b *Board) HasChess960CastlingRights() bool {
 	chess960 := b.chess960
 	b.chess960 = true
-	castlingRights := b.cleanCastlingRights()
+	castlingRights := b.CleanCastlingRights()
 	b.chess960 = chess960
 
 	// Standard chess castling rights can only be on the standard
@@ -2481,7 +2505,7 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 		bbF := BBFileF & backRank
 		bbG := BBFileG & backRank
 
-		for candidate := range (b.cleanCastlingRights() & backRank & toMask).ScanReversed() {
+		for candidate := range (b.CleanCastlingRights() & backRank & toMask).ScanReversed() {
 			rookMask := NewBitboardFromSquare(Square(candidate))
 			aSide := rookMask < kingMask
 
@@ -2541,7 +2565,7 @@ func (b *Board) isIrreversible(move *Move) bool {
 	if b.turn == Black {
 		backrank = BBRank8
 	}
-	cr := b.cleanCastlingRights() & backrank
+	cr := b.CleanCastlingRights() & backrank
 
 	return b.isZeroing(move) ||
 		(cr != BBVoid && (NewBitboardFromSquare(move.FromSquare)&b.baseBoard.kings & ^b.baseBoard.promoted) != BBVoid) ||
@@ -2625,7 +2649,7 @@ func (b *Board) transpositionKey() string {
 		b.baseBoard.occupiedColor[White],
 		b.baseBoard.occupiedColor[Black],
 		b.turn,
-		b.cleanCastlingRights(),
+		b.CleanCastlingRights(),
 		b.epSquare,
 	)
 }

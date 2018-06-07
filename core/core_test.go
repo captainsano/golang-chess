@@ -235,3 +235,148 @@ func TestPiece(t *testing.T) {
 		}
 	})
 }
+
+func TestBoard(t *testing.T) {
+	t.Run("Default position", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		if *(b.PieceAt(B1)) != NewPieceFromSymbol("N") {
+			t.Errorf("pieceAt failed")
+		}
+
+		if b.FEN(false, "legal", NoPiece) != StartingFEN {
+			t.Errorf("FEN generation failed actual: %v expected %v", b.FEN(false, "legal", NoPiece), StartingFEN)
+		}
+
+		if b.Turn() != White {
+			t.Errorf("Turn matching failed")
+		}
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		b := NewBoard(false)
+
+		if b.FEN(false, "legal", NoPiece) != "8/8/8/8/8/8/8/8 w - - 0 1" {
+			t.Errorf("creating empty board failed")
+		}
+
+		// TODO: Use go-cmp
+		b1 := NewBoard(false)
+		if !b.Equal(&b1) {
+			t.Errorf("empty board equality failed")
+		}
+	})
+
+	// TODO: EPD
+	// t.Run("Test from epd", func(t *testing.T) {
+	// 	baseEpd := "rnbqkb1r/ppp1pppp/5n2/3P4/8/8/PPPP1PPP/RNBQKBNR w KQkq -"
+	// 	b, ops := NewBoardFromEpd(baseEpd)
+
+	// 	if ops["ce"] != 55 {
+	// 		t.Errorf("EPD operation not matching")
+	// 	}
+
+	// 	if b.FEN(false, "legal", NoPiece) != baseEpd+" 0 1" {
+	// 		t.Errorf("FEN not matching EPD")
+	// 	}
+	// })
+
+	t.Run("Move making", func(t *testing.T) {
+		b := NewDefaultBoard()
+		move, _ := NewNormalMove(E2, E4)
+		b.Push(move)
+
+		if *move != *(b.Peek()) {
+			t.Errorf("moves not matching")
+		}
+	})
+
+	t.Run("FEN", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		if b.FEN(false, "legal", NoPiece) != StartingFEN {
+			t.Error("FEN not matching")
+		}
+
+		fen := "6k1/pb3pp1/1p2p2p/1Bn1P3/8/5N2/PP1q1PPP/6K1 w - - 0 24"
+		b.SetFEN(fen)
+		if b.FEN(false, "legal", NoPiece) != fen {
+			t.Error("FEN not matching")
+		}
+
+		m, _ := NewMoveFromUci("f3d2")
+		b.Push(m)
+		if b.FEN(false, "legal", NoPiece) != "6k1/pb3pp1/1p2p2p/1Bn1P3/8/8/PP1N1PPP/6K1 b - - 0 24" {
+			t.Error("FEN not matching")
+		}
+	})
+
+	t.Run("XFEN", func(t *testing.T) {
+		t.Run("normal", func(t *testing.T) {
+			xfen := "rn2k1r1/ppp1pp1p/3p2p1/5bn1/P7/2N2B2/1PPPPP2/2BNK1RR w Gkq - 4 11"
+			b := NewBoardFromFEN(xfen, true)
+
+			if b.CastlingRights() != BBG1|BBA8|BBG8 {
+				t.Errorf("castling rights not matching")
+			}
+			if b.CleanCastlingRights() != BBG1|BBA8|BBG8 {
+				t.Errorf("clean castling rights not matching")
+			}
+			if b.ShredderFEN("legal", NoPiece) != "rn2k1r1/ppp1pp1p/3p2p1/5bn1/P7/2N2B2/1PPPPP2/2BNK1RR w Gga - 4 11" {
+				t.Errorf("shredder fen not matching, actual: %v", b.ShredderFEN("legal", NoPiece))
+			}
+			if b.FEN(false, "legal", NoPiece) != xfen {
+				t.Errorf("fen not matching")
+			}
+			if !b.HasCastlingRights(White) {
+				t.Errorf("has castling rights not matching")
+			}
+			if !b.HasCastlingRights(Black) {
+				t.Errorf("has castling rights not matching")
+			}
+			if !b.HasKingsideCastlingRights(Black) {
+				t.Errorf("has castling rights not matching")
+			}
+			if !b.HasKingsideCastlingRights(White) {
+				t.Errorf("has castling rights not matching")
+			}
+			if !b.HasQueensideCastlingRights(Black) {
+				t.Errorf("has castling rights not matching")
+			}
+			if b.HasQueensideCastlingRights(White) {
+				t.Errorf("has castling rights not matching")
+			}
+		})
+
+		t.Run("Chess960 #284", func(t *testing.T) {
+			b := NewBoardFromFEN("rkbqrbnn/pppppppp/8/8/8/8/PPPPPPPP/RKBQRBNN w - - 0 1", true)
+			b.castlingRights = b.baseBoard.rooks
+
+			if !b.CleanCastlingRights().IsMaskingBB(BBA1) {
+				t.Errorf("Chess960 castling rights not matching")
+			}
+			if b.FEN(false, "legal", NoPiece) != "rkbqrbnn/pppppppp/8/8/8/8/PPPPPPPP/RKBQRBNN w KQkq - 0 1" {
+				t.Errorf("Chess960 FEN not matching")
+			}
+			if b.ShredderFEN("legal", NoPiece) != "rkbqrbnn/pppppppp/8/8/8/8/PPPPPPPP/RKBQRBNN w EAea - 0 1" {
+				t.Errorf("Chess960 Shredder FEN not matching")
+			}
+		})
+
+		t.Run("Valid enpassant square on illegal board", func(t *testing.T) {
+			fen := "8/8/8/pP6/8/8/8/8 w - a6 0 1"
+			b := NewBoardFromFEN(fen, false)
+			if b.FEN(false, "legal", NoPiece) != fen {
+				t.Errorf("enpassant with invalid FEN not matching")
+			}
+		})
+
+		t.Run("Invalid enpassant square on illegal board", func(t *testing.T) {
+			fen := "1r6/8/8/pP6/8/8/8/1K6 w - a6 0 1"
+			b := NewBoardFromFEN(fen, false)
+			if b.FEN(false, "legal", NoPiece) != "1r6/8/8/pP6/8/8/8/1K6 w - - 0 1" {
+				t.Errorf("invalid enpassant with invalid FEN not matching, actual: %v", b.FEN(false, "legal", NoPiece))
+			}
+		})
+	})
+}
