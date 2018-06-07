@@ -1,8 +1,6 @@
 package core
 
 import (
-	"strings"
-
 	"github.com/captainsano/golang-chess/util"
 )
 
@@ -225,15 +223,12 @@ func RankFromName(name string) Rank {
 
 // TODO: Optimize with ASCII value computation
 func NewSquareFromName(name string) Square {
-	n := strings.Split(name, "")
-	fileName, rankName := n[0], n[1]
-
-	file := FileFromName(fileName)
+	file := FileFromName(name[0:1])
 	if file == FileNone {
 		return SquareNone
 	}
 
-	rank := RankFromName(rankName)
+	rank := RankFromName(name[1:2])
 	if rank == RankNone {
 		return SquareNone
 	}

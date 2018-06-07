@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+type MoveError struct {
+	error
+	description string
+}
+
+func (e *MoveError) Error() string {
+	return e.description
+}
+
 type Move struct {
 	FromSquare Square
 	ToSquare   Square
@@ -12,52 +21,27 @@ type Move struct {
 	Drop       PieceType
 }
 
-func NewMove(fromSquare, toSquare Square, promotion, drop PieceType) Move {
-	return Move{
-		FromSquare: fromSquare,
-		ToSquare:   toSquare,
-		Promotion:  promotion,
-		Drop:       drop,
-	}
+func NewMove(fromSquare, toSquare Square, promotion, drop PieceType) (*Move, error) {
+	return &Move{fromSquare, toSquare, promotion, drop}, nil
 }
 
-func NewPromotionMove(fromSquare, toSquare Square, promotion PieceType) Move {
-	return Move{
-		FromSquare: fromSquare,
-		ToSquare:   toSquare,
-		Promotion:  promotion,
-		Drop:       NoPiece,
-	}
+func NewPromotionMove(fromSquare, toSquare Square, promotion PieceType) (*Move, error) {
+	return &Move{fromSquare, toSquare, promotion, NoPiece}, nil
 }
 
-func NewNormalMove(fromSquare, toSquare Square) Move {
-	return Move{
-		FromSquare: fromSquare,
-		ToSquare:   toSquare,
-		Promotion:  NoPiece,
-		Drop:       NoPiece,
-	}
+func NewNormalMove(fromSquare, toSquare Square) (*Move, error) {
+	return &Move{fromSquare, toSquare, NoPiece, NoPiece}, nil
 }
 
-func NewNullMove() Move {
-	return Move{
-		FromSquare: SquareNone,
-		ToSquare:   SquareNone,
-		Promotion:  NoPiece,
-		Drop:       NoPiece,
-	}
+func NewNullMove() (*Move, error) {
+	return &Move{SquareNone, SquareNone, NoPiece, NoPiece}, nil
 }
 
-func NewDropMove(fromSquare, toSquare Square, drop PieceType) Move {
-	return Move{
-		FromSquare: SquareNone,
-		ToSquare:   SquareNone,
-		Promotion:  NoPiece,
-		Drop:       drop,
-	}
+func NewDropMove(square Square, drop PieceType) (*Move, error) {
+	return &Move{square, square, NoPiece, drop}, nil
 }
 
-func NewMoveFromUci(uci string) Move {
+func NewMoveFromUci(uci string) (*Move, error) {
 	if uci == "0000" {
 		return NewNullMove()
 	}
@@ -65,7 +49,7 @@ func NewMoveFromUci(uci string) Move {
 	if len(uci) == 4 && uci[1] == '@' {
 		drop := NewPieceFromSymbol(string(uci[0])).Type
 		square := NewSquareFromName(uci[2:])
-		return NewDropMove(square, square, drop)
+		return NewDropMove(square, drop)
 	}
 
 	if len(uci) == 4 {
@@ -77,7 +61,7 @@ func NewMoveFromUci(uci string) Move {
 		return NewPromotionMove(NewSquareFromName(uci[0:2]), NewSquareFromName(uci[2:4]), promotion)
 	}
 
-	panic("Expected UCI string to be of length 4 or 5")
+	return nil, &MoveError{description: "Invalid uci string:" + uci}
 }
 
 func (m *Move) Uci() string {

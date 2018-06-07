@@ -889,7 +889,8 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 		for fromSquare := range nonPawns.ScanReversed() {
 			moves := b.baseBoard.Attacks(Square(fromSquare)) & ^ourPieces & toMask
 			for toSquare := range moves.ScanReversed() {
-				ch <- NewNormalMove(Square(fromSquare), Square(toSquare))
+				m, _ := NewNormalMove(Square(fromSquare), Square(toSquare))
+				ch <- *m
 			}
 		}
 
@@ -912,12 +913,18 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			targets := pawnAttacks[b.turn][fromSquare] & b.baseBoard.occupiedColor[b.turn.Swap()] & toMask
 			for toSquare := range targets.ScanReversed() {
 				if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
-					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Queen)
-					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Rook)
-					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Bishop)
-					ch <- NewPromotionMove(Square(fromSquare), Square(toSquare), Knight)
+					var m *Move
+					m, _ = NewPromotionMove(Square(fromSquare), Square(toSquare), Queen)
+					ch <- *m
+					m, _ = NewPromotionMove(Square(fromSquare), Square(toSquare), Rook)
+					ch <- *m
+					m, _ = NewPromotionMove(Square(fromSquare), Square(toSquare), Bishop)
+					ch <- *m
+					m, _ = NewPromotionMove(Square(fromSquare), Square(toSquare), Knight)
+					ch <- *m
 				} else {
-					ch <- NewNormalMove(Square(fromSquare), Square(toSquare))
+					m, _ := NewNormalMove(Square(fromSquare), Square(toSquare))
+					ch <- *m
 				}
 			}
 		}
@@ -944,12 +951,18 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			}
 
 			if Square(toSquare).Rank() == 0 || Square(toSquare).Rank() == 7 {
-				ch <- NewPromotionMove(fromSquare, Square(toSquare), Queen)
-				ch <- NewPromotionMove(fromSquare, Square(toSquare), Rook)
-				ch <- NewPromotionMove(fromSquare, Square(toSquare), Bishop)
-				ch <- NewPromotionMove(fromSquare, Square(toSquare), Knight)
+				var m *Move
+				m, _ = NewPromotionMove(fromSquare, Square(toSquare), Queen)
+				ch <- *m
+				m, _ = NewPromotionMove(fromSquare, Square(toSquare), Rook)
+				ch <- *m
+				m, _ = NewPromotionMove(fromSquare, Square(toSquare), Bishop)
+				ch <- *m
+				m, _ = NewPromotionMove(fromSquare, Square(toSquare), Knight)
+				ch <- *m
 			} else {
-				ch <- NewNormalMove(fromSquare, Square(toSquare))
+				m, _ := NewNormalMove(fromSquare, Square(toSquare))
+				ch <- *m
 			}
 		}
 
@@ -961,7 +974,9 @@ func (b *Board) generatePseudoLegalMoves(fromMask, toMask Bitboard) chan Move {
 			} else {
 				fromSquare -= 16
 			}
-			ch <- NewNormalMove(fromSquare, Square(toSquare))
+
+			m, _ := NewNormalMove(fromSquare, Square(toSquare))
+			ch <- *m
 		}
 
 		// Generate enpassant captures
@@ -1001,7 +1016,8 @@ func (b *Board) generatePseudoLegalEp(fromMask, toMask Bitboard) chan Move {
 		}
 
 		for capturer := range capturers.ScanReversed() {
-			ch <- NewNormalMove(Square(capturer), b.epSquare)
+			m, _ := NewNormalMove(Square(capturer), b.epSquare)
+			ch <- *m
 		}
 	}(NewBoardFromBoard(b))
 
@@ -2307,7 +2323,8 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 
 			if NewBitboardFromSquare(kingSquare).IsMaskingBB(fromMask) {
 				for toSquare := range (kingAttacks[kingSquare] & ^b.baseBoard.occupiedColor[b.turn] & ^attacked & toMask).ScanReversed() {
-					ch <- NewNormalMove(kingSquare, Square(toSquare))
+					m, _ := NewNormalMove(kingSquare, Square(toSquare))
+					ch <- *m
 				}
 			}
 
@@ -2494,7 +2511,8 @@ func (b *Board) generateCastlingMoves(fromMask, toMask Bitboard) chan Move {
 			if !((((b.baseBoard.occupied ^ kingMask ^ rookMask) & (emptyForKing | emptyForRook)) != BBVoid) ||
 				b.attackedForKing(emptyForKing, (b.baseBoard.occupied^kingMask)) ||
 				b.castlingUncoversRankAttack(rookMask, kingTo) != BBVoid) {
-				ch <- b.fromChess960(b.chess960, Square(kingMask.Msb()), Square(candidate), NoPiece, NoPiece)
+				m := b.fromChess960(b.chess960, Square(kingMask.Msb()), Square(candidate), NoPiece, NoPiece)
+				ch <- *m
 			}
 		}
 	}(NewBoardFromBoard(b))
@@ -2548,42 +2566,47 @@ func (b *Board) IsQueensideCastling(move *Move) bool {
 	return b.IsCastling(move) && move.ToSquare.File() < move.FromSquare.File()
 }
 
-func (b *Board) fromChess960(chess960 bool, fromSquare, toSquare Square, promotion, drop PieceType) Move {
+func (b *Board) fromChess960(chess960 bool, fromSquare, toSquare Square, promotion, drop PieceType) *Move {
 	if !chess960 && drop == NoPiece {
 		if fromSquare == E1 && b.baseBoard.kings.IsMaskingBB(BBE1) {
 			if toSquare == H1 {
-				return NewNormalMove(E1, G1)
+				m, _ := NewNormalMove(E1, G1)
+				return m
 			} else if toSquare == A1 {
-				return NewNormalMove(E1, C1)
+				m, _ := NewNormalMove(E1, C1)
+				return m
 			}
 		} else if fromSquare == E8 && b.baseBoard.kings.IsMaskingBB(BBE8) {
 			if toSquare == H8 {
-				return NewNormalMove(E8, G8)
+				m, _ := NewNormalMove(E8, G8)
+				return m
 			} else if toSquare == A8 {
-				return NewNormalMove(E8, C8)
+				m, _ := NewNormalMove(E8, C8)
+				return m
 			}
 		}
 	}
 
-	return NewMove(fromSquare, toSquare, promotion, drop)
+	m, _ := NewMove(fromSquare, toSquare, promotion, drop)
+	return m
 }
 
 func (b *Board) toChess960(m *Move) *Move {
 	if m.FromSquare == E1 && b.baseBoard.kings.IsMaskingBB(BBE1) {
 		if m.ToSquare == G1 && !b.baseBoard.rooks.IsMaskingBB(BBG1) {
-			m := NewNormalMove(E1, H1)
-			return &m
+			m, _ := NewNormalMove(E1, H1)
+			return m
 		} else if m.ToSquare == C1 && !b.baseBoard.rooks.IsMaskingBB(BBC1) {
-			m := NewNormalMove(E1, A1)
-			return &m
+			m, _ := NewNormalMove(E1, A1)
+			return m
 		}
 	} else if m.FromSquare == E8 && b.baseBoard.kings.IsMaskingBB(BBE8) {
 		if m.ToSquare == G8 && !b.baseBoard.rooks.IsMaskingBB(BBG8) {
-			m := NewNormalMove(E8, H8)
-			return &m
+			m, _ := NewNormalMove(E8, H8)
+			return m
 		} else if m.ToSquare == C8 && !b.baseBoard.rooks.IsMaskingBB(BBC8) {
-			m := NewNormalMove(E8, A8)
-			return &m
+			m, _ := NewNormalMove(E8, A8)
+			return m
 		}
 	}
 

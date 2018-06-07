@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -132,38 +133,38 @@ func TestShifts(t *testing.T) {
 func TestMove(t *testing.T) {
 
 	t.Run("Equality", func(t *testing.T) {
-		a := NewNormalMove(A1, A2)
-		b := NewNormalMove(A1, A2)
-		c := NewPromotionMove(H7, H8, Bishop)
-		d1 := NewNormalMove(H7, H8)
-		d2 := NewNormalMove(H7, H8)
+		a, _ := NewNormalMove(A1, A2)
+		b, _ := NewNormalMove(A1, A2)
+		c, _ := NewPromotionMove(H7, H8, Bishop)
+		d1, _ := NewNormalMove(H7, H8)
+		d2, _ := NewNormalMove(H7, H8)
 
-		if a != b {
-			t.Errorf("Move not equal %v %v", a, b)
+		if *a != *b {
+			t.Errorf("Move not equal %v %v", *a, *b)
 		}
 
-		if b != a {
-			t.Errorf("Move not equal %v %v", b, a)
+		if *b != *a {
+			t.Errorf("Move not equal %v %v", *b, *a)
 		}
 
-		if d1 != d2 {
-			t.Errorf("Move not equal %v %v", d1, d2)
+		if *d1 != *d2 {
+			t.Errorf("Move not equal %v %v", *d1, *d2)
 		}
 
-		if a == c {
-			t.Errorf("Move equal %v %v", a, c)
+		if *a == *c {
+			t.Errorf("Move equal %v %v", *a, *c)
 		}
 
-		if c == d1 {
-			t.Errorf("Move equal %v %v", c, d1)
+		if *c == *d1 {
+			t.Errorf("Move equal %v %v", *c, *d1)
 		}
 
-		if b == d1 {
-			t.Errorf("Move equal %v %v", b, d1)
+		if *b == *d1 {
+			t.Errorf("Move equal %v %v", *b, *d1)
 		}
 
-		if (d1 != d2) == true {
-			t.Errorf("Move equal %v %v", d1, d2)
+		if (*d1 != *d2) == true {
+			t.Errorf("Move equal %v %v", *d1, *d2)
 		}
 	})
 
@@ -171,14 +172,22 @@ func TestMove(t *testing.T) {
 		table := []string{"b5c7", "e7e8q", "P@e4", "B@f4"}
 
 		for _, u := range table {
-			m := NewMoveFromUci(u)
-			if m.Uci() != u {
+			fmt.Println("---> eval: ", u)
+			m, _ := NewMoveFromUci(u)
+			if m == nil || m.Uci() != u {
 				t.Errorf("Error in UCI move: %v", u)
 			}
 		}
 	})
 
 	t.Run("Invalid UCI", func(t *testing.T) {
-		// @TODO
+		table := []string{"", "N", "z1g3", "Q@g9"}
+
+		for _, u := range table {
+			m, err := NewMoveFromUci("")
+			if err == nil || m != nil {
+				t.Errorf("Expected invalid move %v", u)
+			}
+		}
 	})
 }
