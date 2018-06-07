@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -172,7 +171,6 @@ func TestMove(t *testing.T) {
 		table := []string{"b5c7", "e7e8q", "P@e4", "B@f4"}
 
 		for _, u := range table {
-			fmt.Println("---> eval: ", u)
 			m, _ := NewMoveFromUci(u)
 			if m == nil || m.Uci() != u {
 				t.Errorf("Error in UCI move: %v", u)
@@ -188,6 +186,52 @@ func TestMove(t *testing.T) {
 			if err == nil || m != nil {
 				t.Errorf("Expected invalid move %v", u)
 			}
+		}
+	})
+}
+
+func TestPiece(t *testing.T) {
+	t.Run("Equality", func(t *testing.T) {
+		a := NewPiece(Bishop, White)
+		b := NewPiece(King, Black)
+		c := NewPiece(King, White)
+		d1 := NewPiece(Bishop, White)
+		d2 := NewPiece(Bishop, White)
+
+		table := []struct {
+			x, y *Piece
+			eq   bool
+		}{
+			{&a, &d1, true},
+			{&d1, &a, true},
+			{&d1, &d2, true},
+			{&a, &b, false},
+			{&b, &c, false},
+			{&b, &d1, false},
+			{&a, &c, false},
+			{&d1, &d2, true},
+		}
+
+		for _, c := range table {
+			if (*(c.x) == *(c.y)) != c.eq {
+				t.Errorf("Error in piece equality test")
+			}
+
+			if (c.x.Symbol() == c.y.Symbol()) != c.eq {
+				t.Errorf("Error in piece symbol equality test")
+			}
+		}
+	})
+
+	t.Run("Symbol", func(t *testing.T) {
+		wn := NewPieceFromSymbol("N")
+		if wn.Type != Knight || wn.Color != White || wn.Symbol() != "N" {
+			t.Errorf("Piece from symbol failed")
+		}
+
+		bq := NewPieceFromSymbol("q")
+		if bq.Type != Queen || bq.Color != Black || bq.Symbol() != "q" {
+			t.Errorf("Piece from symbol failed")
 		}
 	})
 }
