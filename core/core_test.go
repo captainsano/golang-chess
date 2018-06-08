@@ -392,4 +392,127 @@ func TestBoard(t *testing.T) {
 			t.Errorf("FEN not matching")
 		}
 	})
+
+	t.Run("Get Set", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		if *(b.PieceAt(B1)) != NewPieceFromSymbol("N") {
+			t.Errorf("piece at square failed")
+		}
+
+		b.RemovePieceAt(E2)
+		if b.PieceAt(E2) != nil {
+			t.Errorf("piece at square failed")
+		}
+
+		p1 := NewPieceFromSymbol("r")
+		b.SetPieceAt(E4, &p1, false)
+		if b.PieceAt(E4).Type != Rook {
+			t.Errorf("piece at square failed")
+		}
+
+		b.SetPieceAt(F1, nil, false)
+		if b.PieceAt(F1) != nil {
+			t.Errorf("piece at square failed")
+		}
+
+		p2 := NewPieceFromSymbol("Q")
+		b.SetPieceAt(H7, &p2, true)
+		if !b.baseBoard.promoted.IsMaskingBB(NewBitboardFromSquare(H7)) {
+			t.Errorf("piece at square promoted failed")
+		}
+	})
+
+	t.Run("Test pawn captures", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		// Kings gambit
+		var m *Move
+		m, _ = NewMoveFromUci("e2e4")
+		b.Push(m)
+		m, _ = NewMoveFromUci("e7e5")
+		b.Push(m)
+		m, _ = NewMoveFromUci("f2f4")
+		b.Push(m)
+
+		// Accepted
+		var found bool
+		m, _ = NewMoveFromUci("e5f4")
+
+		found = false
+		for move := range b.GeneratePseudoLegalMoves() {
+			if *m == move {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Pawn capture not listed in pseudo legal")
+		}
+
+		found = false
+		for move := range b.GenerateLegalMoves(BBAll, BBAll) {
+			if *m == move {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Pawn capture not listed in legal")
+		}
+
+		b.Push(m)
+		if *m != *(b.Pop()) {
+			t.Errorf("Popped move not equal")
+		}
+	})
+
+	t.Run("Pawn move generation", func(t *testing.T) {
+		b := NewBoardFromFEN("8/2R1P3/8/2pp4/2k1r3/P7/8/1K6 w - - 1 55", false)
+
+		pseudoLegalMovesCount := 0
+		for range b.GeneratePseudoLegalMoves() {
+			pseudoLegalMovesCount++
+		}
+
+		if pseudoLegalMovesCount != 16 {
+			t.Errorf("Pawn moves generation failed")
+		}
+	})
+
+	t.Run("Single step pawn move", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		a3, _ := NewMoveFromUci("a2a3")
+
+		var found bool
+		found = false
+		for move := range b.GeneratePseudoLegalMoves() {
+			if *a3 == move {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Pawn capture not listed in pseudo legal")
+		}
+
+		found = false
+		for move := range b.GenerateLegalMoves(BBAll, BBAll) {
+			if *a3 == move {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Pawn capture not listed in legal")
+		}
+
+		b.Push(a3)
+		b.Pop()
+
+		if b.FEN(false, "legal", NoPiece) != StartingFEN {
+			t.Errorf("Single step pawn move FEN failed")
+		}
+	})
 }

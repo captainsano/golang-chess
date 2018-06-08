@@ -1507,7 +1507,7 @@ func (b *Board) Push(move *Move) {
 
 	// Handle special pawn moves
 	if piece.Type == Pawn {
-		diff := int(m.ToSquare - m.FromSquare + 8)
+		diff := int(m.ToSquare - m.FromSquare)
 
 		if diff == 16 && m.FromSquare.Rank() == 1 {
 			b.epSquare = m.FromSquare + 8
