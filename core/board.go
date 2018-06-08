@@ -1527,6 +1527,7 @@ func (b *Board) Push(move *Move) {
 
 	// Promotion
 	if m.Promotion != NoPiece {
+		fmt.Println("Got promotion: ", m.Promotion.Symbol())
 		promoted = true
 		piece.Type = m.Promotion
 	}
@@ -2169,8 +2170,8 @@ func (b *Board) parseSan(san string) (*Move, error) {
 	// Get the promotion type
 	promotion := NoPiece
 	if len(matches) > 4 && len(matches[5]) > 0 {
-		p := matches[5]
-		promotion = NewPieceFromSymbol(strings.ToLower(p)).Type
+		p := strings.ToLower(matches[5][len(matches[5])-1:])
+		promotion = NewPieceFromSymbol(p).Type
 	}
 
 	// Filter by piece type
@@ -2192,25 +2193,28 @@ func (b *Board) parseSan(san string) (*Move, error) {
 	}
 
 	// Match legal moves
-	var matchedMove *Move
+	m, _ := NewNullMove()
+	matchedMove := *m
 	for move := range b.GenerateLegalMoves(fromMask, toMask) {
 
 		if move.Promotion != promotion {
+			fmt.Println("continuing... ", move.Promotion.Symbol(), " ", promotion.Symbol())
 			continue
 		}
 
-		if matchedMove != nil {
+		if matchedMove.FromSquare != SquareNone || matchedMove.ToSquare != SquareNone {
 			return nil, SanParseError{description: "Ambiguous SAN " + san + " " + b.FEN(false, "legal", NoPiece)}
 		}
 
-		matchedMove = &move
+		matchedMove = move
 	}
 
-	if matchedMove == nil {
+	fmt.Println("matched move: ", matchedMove)
+	if !matchedMove.IsNotNull() {
 		return nil, SanParseError{description: "Illegal SAN " + san + " " + b.FEN(false, "legal", NoPiece)}
 	}
 
-	return matchedMove, nil
+	return &matchedMove, nil
 }
 
 func (b *Board) PushSan(san string) (*Move, error) {

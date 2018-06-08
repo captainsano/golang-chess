@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	. "github.com/captainsano/golang-chess/core"
 )
 
-func main() {
+func oldMain() {
 	// fen := "rnb1kbnr/ppp1q1pp/8/3P1p2/2PP4/3B1p2/PP3PPP/RNBQK2R w KQkq - 0 7"
 	// fen := "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 1 1"
 	board := NewDefaultBoard()
@@ -47,4 +49,22 @@ func printStatus(b *Board) {
 		fmt.Print(b.San(&m), " ")
 	}
 	fmt.Println()
+}
+
+func main() {
+	sanRegexp := regexp.MustCompile("^([NBKRQ])?([a-h])?([1-8])?[\\-x]?([a-h][1-8])(=?[nbrqkNBRQK])?(\\+|#)?\\z")
+
+	matches := sanRegexp.FindStringSubmatch("d1=Q+")
+
+	for i, m := range matches {
+		fmt.Println("--> ", i, ": ", m)
+	}
+
+	if len(matches) > 4 && len(matches[5]) > 0 {
+		p := strings.ToLower(matches[5][len(matches[5])-1:])
+		fmt.Println("Eval: " + p)
+		promotion := NewPieceFromSymbol(p).Type
+
+		fmt.Println("Promotion piece: " + promotion.Symbol())
+	}
 }

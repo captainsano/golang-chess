@@ -26,6 +26,15 @@ func isInPsuedoLegalMoves(m *Move, b *Board) bool {
 	return false
 }
 
+// Util function to count the number of moves emitted in the channel
+func lenMoveChan(mc chan Move) int {
+	count := 0
+	for range mc {
+		count++
+	}
+	return count
+}
+
 func TestSquare(t *testing.T) {
 	for _, sq := range squares {
 		file := sq.File()
@@ -560,4 +569,171 @@ func TestBoard(t *testing.T) {
 			t.Errorf("castling undo failed")
 		}
 	})
+
+	t.Run("960 castling", func(t *testing.T) {
+		fen := "3r1k1r/4pp2/8/8/8/8/8/4RKR1 w Gd - 1 1"
+		b := NewBoardFromFEN(fen, true)
+
+		var m *Move
+
+		// Let white do the king side swap
+		m, _ = b.parseSan("O-O")
+		if b.San(m) != "O-O" || m.FromSquare != F1 || m.ToSquare != G1 || !isInLegalMoves(m, &b) {
+			t.Errorf("960 castling failed")
+		}
+		b.Push(m)
+		if b.ShredderFEN("legal", NoPiece) != "3r1k1r/4pp2/8/8/8/8/8/4RRK1 b d - 2 1" {
+			t.Errorf("960 castling failed shredder FEN match")
+		}
+
+		// Black cannot castle kingside
+		m, _ = NewMoveFromUci("e8h8")
+		if isInLegalMoves(m, &b) {
+			t.Errorf("960 castling failed")
+		}
+
+		// Let black castle on queenside
+		m, _ = b.parseSan("O-O-O")
+		if b.San(m) != "O-O-O" || m.FromSquare != F8 || m.ToSquare != D8 || !isInLegalMoves(m, &b) {
+			t.Errorf("960 black queenside castling failed")
+		}
+		b.Push(m)
+		if b.ShredderFEN("legal", NoPiece) != "2kr3r/4pp2/8/8/8/8/8/4RRK1 w - - 3 2" {
+			t.Errorf("960 fen not matching")
+		}
+
+		// Restore initial position
+		b.Pop()
+		b.Pop()
+		if b.ShredderFEN("legal", NoPiece) != fen {
+			t.Errorf("960 fen not matching")
+		}
+
+		fen = "Qr4k1/4pppp/8/8/8/8/8/R5KR w Hb - 0 1"
+		b = NewBoardFromFEN(fen, true)
+
+		// White can just hop the rook over
+		m, _ = b.parseSan("O-O")
+		if b.San(m) != "O-O" || m.FromSquare != G1 || m.ToSquare != H1 || !isInLegalMoves(m, &b) {
+			t.Errorf("960 castling failed")
+		}
+		b.Push(m)
+		if b.ShredderFEN("legal", NoPiece) != "Qr4k1/4pppp/8/8/8/8/8/R4RK1 b b - 1 1" {
+			t.Errorf("960 fen not matching")
+		}
+
+		// Black can not castle queenside or kingside
+		if len(b.generateCastlingMoves(BBAll, BBAll)) != 0 {
+			t.Error("960 black should not have any castling moves")
+		}
+
+		// Restore initial position
+		b.Pop()
+		if b.ShredderFEN("legal", NoPiece) != fen {
+			t.Errorf("960 fen not matching")
+		}
+	})
+
+	t.Run("selective castling", func(t *testing.T) {
+		b := NewBoardFromFEN("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1", false)
+
+		// King not selected
+		if lenMoveChan(b.generateCastlingMoves(BBAll & ^b.baseBoard.kings, BBAll)) != 0 {
+			t.Error("King not selected failed")
+		}
+
+		// Rook on h1 not selected
+		if lenMoveChan(b.generateCastlingMoves(BBAll, BBAll & ^BBH1)) != 1 {
+			t.Error("Rook on h1 selected failed")
+		}
+	})
+
+	t.Run("Castling right not destroyed (bug)", func(t *testing.T) {
+		// A rook move from H8 to H1 was only taking whites possible castling rights away.
+		b := NewBoardFromFEN("2r1k2r/2qbbpp1/p2pp3/1p3PP1/Pn2P3/1PN1B3/1P3QB1/1K1R3R b k - 0 22", false)
+		b.PushSan("Rxh1")
+		if b.epd(false, "legal", NoPiece) != "2r1k3/2qbbpp1/p2pp3/1p3PP1/Pn2P3/1PN1B3/1P3QB1/1K1R3r w - -" {
+			t.Errorf("fen not matching")
+		}
+	})
+
+	// TODO: Status
+	// t.Run("invalid castling rights", func(t *testing.T) {
+	// 	// KQkq is not valid in this standard chess position.
+	// 	b := NewBoardFromFEN("1r2k3/8/8/8/8/8/8/R3KR2 w KQkq - 0 1", false)
+	// 	if b.Status() != StatusBadCastlingRights ||
+	// 		b.FEN(false, "legal", NoPiece) != "1r2k3/8/8/8/8/8/8/R3KR2 w Q - 0 1" ||
+	// 		!b.HasQueensideCastlingRights(White) ||
+	// 		b.HasKingsideCastlingRights(White) ||
+	// 		b.HasQueensideCastlingRights(Black) ||
+	// 		b.HasKingsideCastlingRights(Black) {
+	// 		t.Error("castling rights failed")
+	// 	}
+
+	// 	b = NewBoardFromFEN("4k2r/8/8/8/8/8/8/R1K5 w KQkq - 0 1", true)
+	// 	if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "4k2r/8/8/8/8/8/8/R1K5 w Qk - 0 1" {
+	// 		t.Error("castling rights failed")
+	// 	}
+
+	// 	b = NewBoardFromFEN("1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQkq - 0 1", true)
+	// 	if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQq - 0 1" {
+	// 		t.Error("castling rights failed")
+	// 	}
+	// })
+
+	t.Run("960 different king and rook file", func(t *testing.T) {
+		// Theoretically this position (with castling rights) can not be reached
+		// with a series of legal moves from one of the 960 starting positions.
+		// Decision: We don't care. Neither does Stockfish or lichess.org.
+		fen := "1r1k1r2/5p2/8/8/8/8/3N4/R5KR b KQkq - 0 1"
+		b := NewBoardFromFEN(fen, true)
+		if b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("fen not matching")
+		}
+	})
+
+	t.Run("960 prevented castle", func(t *testing.T) {
+		b := NewBoardFromFEN("4k3/8/8/1b6/8/8/8/5RKR w KQ - 0 1", true)
+		m, _ := NewMoveFromUci("g1f1")
+		if b.IsLegal(m) {
+			t.Error("expected move to be legal")
+		}
+	})
+
+	t.Run("Insufficient material", func(t *testing.T) {
+		// starting position
+		b := NewDefaultBoard()
+		if b.IsInsufficientMaterial() {
+			t.Error("insufficient material failed")
+		}
+
+		// King vs. King + 2 bishops of the same color.
+		b = NewBoardFromFEN("k1K1B1B1/8/8/8/8/8/8/8 w - - 7 32", false)
+		if !b.IsInsufficientMaterial() {
+			t.Error("insufficient material failed")
+		}
+
+		// Add bishop of opposite color for the weaker side.
+		p := NewPieceFromSymbol("b")
+		b.SetPieceAt(B8, &p, false)
+		if b.IsInsufficientMaterial() {
+			t.Error("insufficient material failed")
+		}
+	})
+
+	t.Run("Promotion with check", func(t *testing.T) {
+		b := NewBoardFromFEN("8/6P1/2p5/1Pqk4/6P1/2P1RKP1/4P1P1/8 w - - 0 1", false)
+		m, _ := NewMoveFromUci("g7g8q")
+		b.Push(m)
+		if !b.IsCheck() || b.FEN(false, "legal", NoPiece) != "6Q1/8/2p5/1Pqk4/6P1/2P1RKP1/4P1P1/8 b - - 0 1" {
+			t.Error("promotion with check failed")
+		}
+
+		b = NewBoardFromFEN("8/8/8/3R1P2/8/2k2K2/3p4/r7 b - - 0 82", false)
+		b.PushSan("d1=Q+")
+		if b.FEN(false, "legal", NoPiece) != "8/8/8/3R1P2/8/2k2K2/8/r2q4 w - - 0 83" {
+			t.Errorf("promotion with check failed, \n got: %v \n expected: %v", b.FEN(false, "legal", NoPiece), "8/8/8/3R1P2/8/2k2K2/8/r2q4 w - - 0 83")
+		}
+	})
+
 }
