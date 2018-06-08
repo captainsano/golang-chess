@@ -1,5 +1,7 @@
 * golang-chess: A library for chess in golang, ported from python-chess
 
+[[https://travis-ci.org/captainsano/golang-chess.svg?branch=master)](https://travis-ci.org/captainsano/golang-chess]]
+
 ** Introduction
 
 THIS IS A WORK IN PROGRESS
