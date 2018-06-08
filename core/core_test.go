@@ -4,6 +4,28 @@ import (
 	"testing"
 )
 
+// Utility function to check if the given move is in legal moves
+func isInLegalMoves(m *Move, b *Board) bool {
+	for move := range b.GenerateLegalMoves(BBAll, BBAll) {
+		if *m == move {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Utility function to check if the given move is in pseudo legal moves
+func isInPsuedoLegalMoves(m *Move, b *Board) bool {
+	for move := range b.GeneratePseudoLegalMoves() {
+		if *m == move {
+			return true
+		}
+	}
+
+	return false
+}
+
 func TestSquare(t *testing.T) {
 	for _, sq := range squares {
 		file := sq.File()
@@ -436,28 +458,12 @@ func TestBoard(t *testing.T) {
 		b.Push(m)
 
 		// Accepted
-		var found bool
 		m, _ = NewMoveFromUci("e5f4")
-
-		found = false
-		for move := range b.GeneratePseudoLegalMoves() {
-			if *m == move {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !isInPsuedoLegalMoves(m, &b) {
 			t.Errorf("Pawn capture not listed in pseudo legal")
 		}
 
-		found = false
-		for move := range b.GenerateLegalMoves(BBAll, BBAll) {
-			if *m == move {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !isInLegalMoves(m, &b) {
 			t.Errorf("Pawn capture not listed in legal")
 		}
 
@@ -485,26 +491,10 @@ func TestBoard(t *testing.T) {
 
 		a3, _ := NewMoveFromUci("a2a3")
 
-		var found bool
-		found = false
-		for move := range b.GeneratePseudoLegalMoves() {
-			if *a3 == move {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !isInPsuedoLegalMoves(a3, &b) {
 			t.Errorf("Pawn capture not listed in pseudo legal")
 		}
-
-		found = false
-		for move := range b.GenerateLegalMoves(BBAll, BBAll) {
-			if *a3 == move {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !isInLegalMoves(a3, &b) {
 			t.Errorf("Pawn capture not listed in legal")
 		}
 
@@ -513,6 +503,61 @@ func TestBoard(t *testing.T) {
 
 		if b.FEN(false, "legal", NoPiece) != StartingFEN {
 			t.Errorf("Single step pawn move FEN failed")
+		}
+	})
+
+	t.Run("Castling", func(t *testing.T) {
+		b := NewBoardFromFEN("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1", false)
+
+		var m, x *Move
+
+		// Let white castle short
+		m, _ = b.parseSan("O-O")
+		x, _ = NewMoveFromUci("e1g1")
+		if *m != *x || b.San(m) != "O-O" || !isInLegalMoves(m, &b) {
+			t.Errorf("white castling kingside failed")
+		}
+		b.Push(m)
+
+		// Let black castle long
+		m, _ = b.parseSan("O-O-O")
+		if b.San(m) != "O-O-O" || !isInLegalMoves(m, &b) {
+			t.Errorf("black castling queenside failed")
+		}
+		b.Push(m)
+		if b.FEN(false, "legal", NoPiece) != "2kr3r/8/8/8/8/8/8/R4RK1 w - - 3 2" {
+			t.Errorf("black castling queenside failed")
+		}
+
+		// Undo both castling moves
+		b.Pop()
+		b.Pop()
+		if b.FEN(false, "legal", NoPiece) != "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1" {
+			t.Errorf("castling undo failed")
+		}
+
+		// Let white castle long
+		m, _ = b.parseSan("O-O-O")
+		if b.San(m) != "O-O-O" || !isInLegalMoves(m, &b) {
+			t.Errorf("white castling queenside failed")
+		}
+		b.Push(m)
+
+		// Let black castle short
+		m, _ = b.parseSan("O-O")
+		if b.San(m) != "O-O" || !isInLegalMoves(m, &b) {
+			t.Errorf("black castling kingside failed")
+		}
+		b.Push(m)
+		if b.FEN(false, "legal", NoPiece) != "r4rk1/8/8/8/8/8/8/2KR3R w - - 3 2" {
+			t.Errorf("black castling queenside failed")
+		}
+
+		// Undo both castling moves
+		b.Pop()
+		b.Pop()
+		if b.FEN(false, "legal", NoPiece) != "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 1 1" {
+			t.Errorf("castling undo failed")
 		}
 	})
 }
