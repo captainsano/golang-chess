@@ -196,18 +196,18 @@ func (b *BaseBoard) Attacks(s Square) Bitboard {
 }
 
 func (b *BaseBoard) attackersMask(c Color, s Square, occupied Bitboard) Bitboard {
-	rank_pieces := RankMasks(s) & occupied
-	file_pieces := FileMasks(s) & occupied
-	diag_pieces := DiagMasks(s) & occupied
+	rankPieces := RankMasks(s) & occupied
+	filePieces := FileMasks(s) & occupied
+	diagPieces := DiagMasks(s) & occupied
 
-	queens_and_rooks := b.queens | b.rooks
-	queens_and_bishops := b.queens | b.bishops
+	queensAndRooks := b.queens | b.rooks
+	queensAndBishops := b.queens | b.bishops
 
 	attackers := (KingAttacks(s) & b.kings) |
 		(KnightAttacks(s) & b.knights) |
-		(RankAttacks(s)[rank_pieces] & queens_and_rooks) |
-		(FileAttacks(s)[file_pieces] & queens_and_rooks) |
-		(DiagAttacks(s)[diag_pieces] & queens_and_bishops) |
+		(RankAttacks(s)[rankPieces] & queensAndRooks) |
+		(FileAttacks(s)[filePieces] & queensAndRooks) |
+		(DiagAttacks(s)[diagPieces] & queensAndBishops) |
 		(PawnAttacks(s, c.Swap()) & b.pawns)
 
 	return attackers & b.occupiedColor[c]
@@ -1093,7 +1093,7 @@ func (b *Board) IsIntoCheck(m *Move) bool {
 		}
 	}
 
-	return b.isSafe(kingSquare, b.sliderBlockers(kingSquare), m)
+	return !b.isSafe(kingSquare, b.sliderBlockers(kingSquare), m)
 }
 
 func (b *Board) WasIntoCheck() bool {
@@ -2115,6 +2115,114 @@ func (b *Board) algebraic(move *Move, long bool) string {
 	return san
 }
 
+var sanRegexp *regexp.Regexp
+var fenCastlingRegexp *regexp.Regexp
+
+func init() {
+	sanRegexp = regexp.MustCompile("^([NBKRQ])?([a-h])?([1-8])?[\\-x]?([a-h][1-8])(=?[nbrqkNBRQK])?(\\+|#)?\\z")
+	fenCastlingRegexp = regexp.MustCompile("^(?:-|[KQABCDEFGH]{0,2}[kqabcdefgh]{0,2})\\z")
+}
+
+type SanParseError struct {
+	error
+	description string
+}
+
+func (e SanParseError) Error() string { return e.description }
+
+func (b *Board) parseSan(san string) (*Move, error) {
+	// Castling
+	if _, ok := (map[string]bool{"O-O": true, "O-O+": true, "O-O#": true})[san]; ok {
+		for m := range b.generateCastlingMoves(BBAll, BBAll) {
+			if b.IsKingsideCastling(&m) {
+				return &m, nil
+			}
+		}
+
+		return nil, SanParseError{description: "Invalid kingside castling expression"}
+	} else if _, ok := (map[string]bool{"O-O-O": true, "O-O-O+": true, "O-O-O#": true})[san]; ok {
+		for m := range b.generateCastlingMoves(BBAll, BBAll) {
+			if b.IsQueensideCastling(&m) {
+				return &m, nil
+			}
+		}
+
+		return nil, SanParseError{description: "Invalid queenside castling expression"}
+	}
+
+	// Match normal moves
+	match := sanRegexp.MatchString(san)
+	if !match {
+		// Null moves
+		if san == "--" || san == "Z0" {
+			return NewNullMove()
+		}
+
+		return nil, SanParseError{description: "Invalid san " + san}
+	}
+
+	// Get target square
+	matches := sanRegexp.FindStringSubmatch(san)
+	toSquare := matches[4]
+	toMask := NewBitboardFromSquare(NewSquareFromName(toSquare))
+
+	// Get the promotion type
+	promotion := NoPiece
+	if len(matches) > 4 && len(matches[5]) > 0 {
+		p := matches[5]
+		promotion = NewPieceFromSymbol(strings.ToLower(p)).Type
+	}
+
+	// Filter by piece type
+	pieceType := NoPiece
+	fromMask := b.baseBoard.pawns
+	if len(matches) > 0 && len(matches[1]) > 0 {
+		pieceType = NewPieceFromSymbol(strings.ToLower(matches[1])).Type
+		fromMask = b.baseBoard.PieceMask(pieceType, b.turn)
+	}
+
+	// Filter by source file
+	if len(matches) > 1 && len(matches[2]) > 0 {
+		fromMask &= NewBitboardFromFile(FileFromName(matches[2]))
+	}
+
+	// Filter by source rank
+	if len(matches) > 2 && len(matches[3]) > 0 {
+		fromMask &= NewBitboardFromRank(RankFromName(matches[3]))
+	}
+
+	// Match legal moves
+	var matchedMove *Move
+	for move := range b.GenerateLegalMoves(fromMask, toMask) {
+
+		if move.Promotion != promotion {
+			continue
+		}
+
+		if matchedMove != nil {
+			return nil, SanParseError{description: "Ambiguous SAN " + san + " " + b.FEN(false, "legal", NoPiece)}
+		}
+
+		matchedMove = &move
+	}
+
+	if matchedMove == nil {
+		return nil, SanParseError{description: "Illegal SAN " + san + " " + b.FEN(false, "legal", NoPiece)}
+	}
+
+	return matchedMove, nil
+}
+
+func (b *Board) PushSan(san string) (*Move, error) {
+	move, err := b.parseSan(san)
+	if err != nil {
+		return nil, err
+	}
+
+	b.Push(move)
+	return move, nil
+}
+
 func (b *Board) Ascii() string {
 	// TODO: Add other FEN params
 	return b.baseBoard.Ascii()
@@ -2652,4 +2760,8 @@ func (b *Board) transpositionKey() string {
 		b.CleanCastlingRights(),
 		b.epSquare,
 	)
+}
+
+func (b Board) String() string {
+	return b.Ascii()
 }

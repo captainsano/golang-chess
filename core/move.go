@@ -84,7 +84,7 @@ func (m *Move) IsNotNull() bool {
 	return m.FromSquare != SquareNone || m.ToSquare != SquareNone || m.Promotion != NoPiece || m.Drop != NoPiece
 }
 
-func (m *Move) String() string {
+func (m Move) String() string {
 	return m.Uci()
 }
 

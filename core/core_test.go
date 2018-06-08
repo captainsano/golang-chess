@@ -371,12 +371,25 @@ func TestBoard(t *testing.T) {
 			}
 		})
 
-		t.Run("Invalid enpassant square on illegal board", func(t *testing.T) {
+		t.Run("Illegal enpassant square on illegal board", func(t *testing.T) {
 			fen := "1r6/8/8/pP6/8/8/8/1K6 w - a6 0 1"
 			b := NewBoardFromFEN(fen, false)
 			if b.FEN(false, "legal", NoPiece) != "1r6/8/8/pP6/8/8/8/1K6 w - - 0 1" {
-				t.Errorf("invalid enpassant with invalid FEN not matching, actual: %v", b.FEN(false, "legal", NoPiece))
+				t.Errorf("illegal enpassant with invalid FEN not matching, actual: %v", b.FEN(false, "legal", NoPiece))
 			}
 		})
+	})
+
+	t.Run("FEN enpassant", func(t *testing.T) {
+		b := NewDefaultBoard()
+		b.PushSan("e4")
+
+		if b.FEN(false, "fen", NoPiece) != "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" {
+			t.Errorf("FEN not matching")
+		}
+
+		if b.FEN(false, "xfen", NoPiece) != "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" {
+			t.Errorf("FEN not matching")
+		}
 	})
 }
