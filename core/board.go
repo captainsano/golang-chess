@@ -1527,7 +1527,6 @@ func (b *Board) Push(move *Move) {
 
 	// Promotion
 	if m.Promotion != NoPiece {
-		fmt.Println("Got promotion: ", m.Promotion.Symbol())
 		promoted = true
 		piece.Type = m.Promotion
 	}
@@ -2198,7 +2197,6 @@ func (b *Board) parseSan(san string) (*Move, error) {
 	for move := range b.GenerateLegalMoves(fromMask, toMask) {
 
 		if move.Promotion != promotion {
-			fmt.Println("continuing... ", move.Promotion.Symbol(), " ", promotion.Symbol())
 			continue
 		}
 
@@ -2209,7 +2207,6 @@ func (b *Board) parseSan(san string) (*Move, error) {
 		matchedMove = move
 	}
 
-	fmt.Println("matched move: ", matchedMove)
 	if !matchedMove.IsNotNull() {
 		return nil, SanParseError{description: "Illegal SAN " + san + " " + b.FEN(false, "legal", NoPiece)}
 	}
