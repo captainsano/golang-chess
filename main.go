@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
 
 	. "github.com/captainsano/golang-chess/core"
 )
@@ -52,19 +50,16 @@ func printStatus(b *Board) {
 }
 
 func main() {
-	sanRegexp := regexp.MustCompile("^([NBKRQ])?([a-h])?([1-8])?[\\-x]?([a-h][1-8])(=?[nbrqkNBRQK])?(\\+|#)?\\z")
+	fen := "8/8/8/R2nkn2/8/8/2K5/8 b - - 0 1"
+	b := NewBoardFromFEN(fen, false)
 
-	matches := sanRegexp.FindStringSubmatch("d1=Q+")
+	m1, _ := NewMoveFromUci("f5e3")
+	b.Push(m1)
 
-	for i, m := range matches {
-		fmt.Println("--> ", i, ": ", m)
-	}
+	fmt.Println("Current position:")
+	fmt.Println(b)
 
-	if len(matches) > 4 && len(matches[5]) > 0 {
-		p := strings.ToLower(matches[5][len(matches[5])-1:])
-		fmt.Println("Eval: " + p)
-		promotion := NewPieceFromSymbol(p).Type
-
-		fmt.Println("Promotion piece: " + promotion.Symbol())
+	for m := range b.GenerateLegalMoves(BBAll, BBAll) {
+		fmt.Println("--> Legal Move: ", m.Uci())
 	}
 }

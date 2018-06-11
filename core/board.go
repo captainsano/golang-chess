@@ -1274,7 +1274,7 @@ func (b *Board) Result(claimDraw bool) string {
 	}
 
 	// Undetermined
-	return "*'"
+	return "*"
 }
 
 func (b *Board) IsCheckmate() bool {
@@ -1282,13 +1282,13 @@ func (b *Board) IsCheckmate() bool {
 		return false
 	}
 
-	hasLegalMoves := 0
+	legalMovesCount := 0
 	for range b.GenerateLegalMoves(BBAll, BBAll) {
-		hasLegalMoves++
+		legalMovesCount++
 		break
 	}
 
-	return hasLegalMoves == 0
+	return legalMovesCount == 0
 }
 
 func (b *Board) IsStalemate() bool {
@@ -2001,6 +2001,33 @@ func (b *Board) San(move *Move) string {
 	return b.algebraic(move, false)
 }
 
+func (b *Board) VariationSan(variation []Move) (string, error) {
+	board := NewBoardFromBoard(b)
+	san := []string{}
+
+	for _, m := range variation {
+		if !board.IsLegal(&m) {
+			return "", &MoveError{description: "Illegal move " + m.Uci()}
+		}
+
+		if board.turn == White {
+			san = append(san, fmt.Sprintf("%d. %s", board.fullMoveNumber, board.San(&m)))
+		} else if len(san) == 0 {
+			san = append(san, fmt.Sprintf("%d...%s", board.fullMoveNumber, board.San(&m)))
+		} else {
+			san = append(san, board.San(&m))
+		}
+
+		board.Push(&m)
+	}
+
+	return strings.Join(san, " "), nil
+}
+
+func (b *Board) Lan(move *Move) string {
+	return b.algebraic(move, true)
+}
+
 func (b *Board) algebraic(move *Move, long bool) string {
 	if !move.IsNotNull() {
 		return "--"
@@ -2216,6 +2243,32 @@ func (b *Board) parseSan(san string) (*Move, error) {
 
 func (b *Board) PushSan(san string) (*Move, error) {
 	move, err := b.parseSan(san)
+	if err != nil {
+		return nil, err
+	}
+
+	b.Push(move)
+	return move, nil
+}
+
+func (b *Board) parseUci(uci string) (*Move, error) {
+	move, err := NewMoveFromUci(uci)
+	if err != nil {
+		return nil, err
+	}
+
+	move = b.toChess960(move)
+	move = b.fromChess960(b.chess960, move.FromSquare, move.ToSquare, move.Promotion, move.Drop)
+
+	if !b.IsLegal(move) {
+		return nil, &MoveError{description: "Illegal uci " + uci}
+	}
+
+	return move, nil
+}
+
+func (b *Board) PushUci(uci string) (*Move, error) {
+	move, err := b.parseUci(uci)
 	if err != nil {
 		return nil, err
 	}
@@ -2453,36 +2506,36 @@ func (b *Board) generateEvasions(kingSquare Square, checkers, fromMask, toMask B
 		attacked := BBVoid
 		for checker := range sliders.ScanReversed() {
 			attacked |= bbRays[kingSquare][checker] & ^NewBitboardFromSquare(Square(checker))
+		}
 
-			if NewBitboardFromSquare(kingSquare).IsMaskingBB(fromMask) {
-				for toSquare := range (kingAttacks[kingSquare] & ^b.baseBoard.occupiedColor[b.turn] & ^attacked & toMask).ScanReversed() {
-					m, _ := NewNormalMove(kingSquare, Square(toSquare))
-					ch <- *m
-				}
+		if NewBitboardFromSquare(kingSquare).IsMaskingBB(fromMask) {
+			for toSquare := range (kingAttacks[kingSquare] & ^b.baseBoard.occupiedColor[b.turn] & ^attacked & toMask).ScanReversed() {
+				m, _ := NewNormalMove(kingSquare, Square(toSquare))
+				ch <- *m
+			}
+		}
+
+		checker := Square(checkers.Msb())
+		if NewBitboardFromSquare(checker) == checkers {
+			// capture or block a single checker
+			target := bbBetween[kingSquare][checker] | checkers
+
+			for move := range b.generatePseudoLegalMoves(^b.baseBoard.kings&fromMask, target&toMask) {
+				ch <- move
 			}
 
-			checker := Square(checkers.Msb())
-			if NewBitboardFromSquare(checker) == checkers {
-				// capture or block a single checker
-				target := bbBetween[kingSquare][checker] | checkers
-
-				for move := range b.generatePseudoLegalMoves(^b.baseBoard.kings&fromMask, target&toMask) {
-					ch <- move
+			// Capture the checking pawn en passant (avoid duplicate)
+			if b.epSquare != SquareNone && !NewBitboardFromSquare(b.epSquare).IsMaskingBB(target) {
+				lastDouble := b.epSquare
+				if b.turn == White {
+					lastDouble -= 8
+				} else {
+					lastDouble += 8
 				}
 
-				// Capture the checking pawn en passant (avoid duplicate)
-				if b.epSquare != SquareNone && !NewBitboardFromSquare(b.epSquare).IsMaskingBB(target) {
-					lastDouble := b.epSquare
-					if b.turn == White {
-						lastDouble -= 8
-					} else {
-						lastDouble += 8
-					}
-
-					if lastDouble == checker {
-						for move := range b.generatePseudoLegalEp(fromMask, toMask) {
-							ch <- move
-						}
+				if lastDouble == checker {
+					for move := range b.generatePseudoLegalEp(fromMask, toMask) {
+						ch <- move
 					}
 				}
 			}
@@ -2503,7 +2556,6 @@ func (b *Board) GenerateLegalMoves(fromMask, toMask Bitboard) chan Move {
 		}
 
 		kingMask := b.baseBoard.kings & b.baseBoard.occupiedColor[b.turn]
-
 		if kingMask != BBVoid {
 			king := Square(kingMask.Msb())
 			blockers := b.sliderBlockers(king)

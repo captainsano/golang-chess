@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -733,6 +734,232 @@ func TestBoard(t *testing.T) {
 		b.PushSan("d1=Q+")
 		if b.FEN(false, "legal", NoPiece) != "8/8/8/3R1P2/8/2k2K2/8/r2q4 w - - 0 83" {
 			t.Errorf("promotion with check failed, \n got: %v \n expected: %v", b.FEN(false, "legal", NoPiece), "8/8/8/3R1P2/8/2k2K2/8/r2q4 w - - 0 83")
+		}
+	})
+
+	t.Run("Scholars mate", func(t *testing.T) {
+		b := NewDefaultBoard()
+
+		e4, _ := NewMoveFromUci("e2e4")
+		if !isInLegalMoves(e4, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(e4)
+
+		e5, _ := NewMoveFromUci("e7e5")
+		if !isInLegalMoves(e5, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(e5)
+
+		Qf3, _ := NewMoveFromUci("d1f3")
+		if !isInLegalMoves(Qf3, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(Qf3)
+
+		Nc6, _ := NewMoveFromUci("b8c6")
+		if !isInLegalMoves(Nc6, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(Nc6)
+
+		Bc4, _ := NewMoveFromUci("f1c4")
+		if !isInLegalMoves(Bc4, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(Bc4)
+
+		Rb8, _ := NewMoveFromUci("a8b8")
+		if !isInLegalMoves(Rb8, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(Rb8)
+
+		if b.IsCheck() || b.IsCheckmate() || b.IsGameOver(false) || b.IsStalemate() {
+			t.Errorf("Incorrect game status")
+		}
+
+		Qf7Mate, _ := NewMoveFromUci("f3f7")
+		if !isInLegalMoves(Qf7Mate, &b) {
+			t.Errorf("expected to be in legal moves")
+		}
+		b.Push(Qf7Mate)
+
+		if !b.IsCheck() || !b.IsCheckmate() || !b.IsGameOver(false) || !b.IsGameOver(true) || b.IsStalemate() {
+			t.Errorf("Incorrect game status")
+		}
+
+		if b.FEN(false, "legal", NoPiece) != "1rbqkbnr/pppp1Qpp/2n5/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQk - 0 4" {
+			t.Errorf("FEN not matching")
+		}
+	})
+
+	t.Run("Result", func(t *testing.T) {
+		var b Board
+
+		// Undetermined
+		b = NewDefaultBoard()
+		if b.Result(true) != "*" {
+			t.Error("Expected *")
+		}
+
+		// White checkmated
+		b = NewBoardFromFEN("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", false)
+		if b.Result(true) != "0-1" {
+			t.Error("Expected 0-1")
+		}
+
+		// Stalemate
+		b = NewBoardFromFEN("7K/7P/7k/8/6q1/8/8/8 w - - 0 1", false)
+		if b.Result(false) != "1/2-1/2" {
+			t.Error("Expected 1/2-1/2")
+		}
+
+		// Insufficient material
+		b = NewBoardFromFEN("4k3/8/8/8/8/5B2/8/4K3 w - - 0 1", false)
+		if b.Result(false) != "1/2-1/2" {
+			t.Error("Expected 1/2-1/2")
+		}
+
+		// Fiftyseven-move rule
+		b = NewBoardFromFEN("4k3/8/6r1/8/8/8/2R5/4K3 w - - 369 1", false)
+		if b.Result(false) != "1/2-1/2" {
+			t.Error("Expected 1/2-1/2")
+		}
+
+		// Fifty-move rule
+		b = NewBoardFromFEN("4k3/8/6r1/8/8/8/2R5/4K3 w - - 120 1", false)
+		if b.Result(false) != "*" || b.Result(true) != "1/2-1/2" {
+			t.Error("Expected * or 1/2-1/2")
+		}
+	})
+
+	t.Run("SAN", func(t *testing.T) {
+		var b Board
+		var fen string
+
+		// Castling with check
+		fen = "rnbk1b1r/ppp2pp1/5n1p/4p1B1/2P5/2N5/PP2PPPP/R3KBNR w KQ - 0 7"
+		b = NewBoardFromFEN(fen, false)
+		longCastleCheck, _ := NewMoveFromUci("e1a1")
+		if b.San(longCastleCheck) != "O-O-O+" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("error castling with check")
+		}
+
+		// Enpassant mate
+		fen = "6bk/7b/8/3pP3/8/8/8/Q3K3 w - d6 0 2"
+		b = NewBoardFromFEN(fen, false)
+		fxe6MateEp, _ := NewMoveFromUci("e5d6")
+		if b.San(fxe6MateEp) != "exd6#" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("error castling with check")
+		}
+
+		// Disambiguation
+		fen = "N3k2N/8/8/3N4/N4N1N/2R5/1R6/4K3 w - - 0 1"
+		b = NewBoardFromFEN(fen, false)
+		for _, tc := range []struct{ uci, exp string }{
+			{"e1f1", "Kf1"},
+			{"c3c2", "Rcc2"},
+			{"b2c2", "Rbc2"},
+			{"a4b6", "N4b6"},
+			{"h8g6", "N8g6"},
+			{"h4g6", "Nh4g6"},
+		} {
+			m, _ := NewMoveFromUci(tc.uci)
+			if b.San(m) != tc.exp {
+				t.Errorf("disambiguation failed")
+			}
+		}
+		if b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("error castling with check")
+		}
+
+		// Do not disambiguate illegal alternatives
+		fen = "8/8/8/R2nkn2/8/8/2K5/8 b - - 0 1"
+		b = NewBoardFromFEN(fen, false)
+		m1, _ := NewMoveFromUci("f5e3")
+		if b.San(m1) != "Ne3+" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("error legal disambiguation, %v", b.San(m1))
+		}
+
+		// Promotion
+		fen = "7k/1p2Npbp/8/2P5/1P1r4/3b2QP/3q1pPK/2RB4 b - - 1 29"
+		b = NewBoardFromFEN(fen, false)
+		m2, _ := NewMoveFromUci("f2f1q")
+		m3, _ := NewMoveFromUci("f2f1n")
+		if b.San(m2) != "f1=Q" || b.San(m3) != "f1=N+" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("error promotion %v %v", b.San(m2), b.San(m3))
+		}
+	})
+
+	t.Run("LAN", func(t *testing.T) {
+		// Normal moves always with origin square.
+		fen := "N3k2N/8/8/3N4/N4N1N/2R5/1R6/4K3 w - - 0 1"
+		b := NewBoardFromFEN(fen, false)
+		m1, _ := NewMoveFromUci("e1f1")
+		m2, _ := NewMoveFromUci("c3c2")
+		m3, _ := NewMoveFromUci("a4c5")
+		if b.Lan(m1) != "Ke1-f1" || b.Lan(m2) != "Rc3-c2" || b.Lan(m3) != "Na4-c5" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Error("Lan strings not matching")
+		}
+
+		// Normal capture.
+		fen = "rnbq1rk1/ppp1bpp1/4pn1p/3p2B1/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ - 0 7"
+		b = NewBoardFromFEN(fen, false)
+		m, _ := NewMoveFromUci("g5f6")
+		if b.Lan(m) != "Bg5xf6" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Error("Lan strings not matching")
+		}
+
+		// Pawn captures and moves.
+		fen = "6bk/7b/8/3pP3/8/8/8/Q3K3 w - d6 0 2"
+		b = NewBoardFromFEN(fen, false)
+		m1, _ = NewMoveFromUci("e5d6")
+		m2, _ = NewMoveFromUci("e5e6")
+		if b.Lan(m1) != "e5xd6#" || b.Lan(m2) != "e5-e6+" || b.FEN(false, "legal", NoPiece) != fen {
+			t.Error("Lan strings not matching")
+		}
+	})
+
+	t.Run("SAN Newline", func(t *testing.T) {
+		fen := "rnbqk2r/ppppppbp/5np1/8/8/5NP1/PPPPPPBP/RNBQK2R w KQkq - 2 4"
+		b := NewBoardFromFEN(fen, false)
+		var err error
+
+		_, err = b.parseSan("O-O\n")
+		if err == nil {
+			t.Errorf("should return error")
+		}
+
+		_, err = b.parseSan("Nc3\n")
+		if err == nil {
+			t.Errorf("should return error")
+		}
+	})
+
+	// @TODO: Write this test
+	t.Run("Variation SAN", func(t *testing.T) {
+		t.Skip("TODO: Write this test")
+	})
+
+	t.Run("Move stack usage", func(t *testing.T) {
+		b := NewDefaultBoard()
+		b.PushUci("d2d4")
+		b.PushUci("d7d5")
+		b.PushUci("g1f3")
+		b.PushUci("c8f5")
+		b.PushUci("e2e3")
+		b.PushUci("e7e6")
+		b.PushUci("f1d3")
+		b.PushUci("f8d6")
+		b.PushUci("e1h1")
+
+		fmt.Println("-- ", b.moveStack)
+
+		san, err := b.VariationSan(b.moveStack)
+		if san != "1. d4 d5 2. Nf3 Bf5 3. e3 e6 4. Bd3 Bd6 5. O-O" || err != nil {
+			t.Errorf("Incorrect move stack: %v %v", san, err.Error())
 		}
 	})
 
