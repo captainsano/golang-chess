@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -952,7 +951,7 @@ func TestBoard(t *testing.T) {
 			san, err := b.VariationSan(variation)
 			if san != "1. e4 e5 2. Nf3" || err != nil {
 				if err != nil {
-					fmt.Println("Error: %v", err.Error())
+					t.Errorf("Error: %s", err.Error())
 				}
 				t.Errorf("variation SAN not matching")
 			}
