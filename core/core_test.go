@@ -937,7 +937,6 @@ func TestBoard(t *testing.T) {
 		}
 	})
 
-	// @TODO: Write this test
 	t.Run("Variation SAN", func(t *testing.T) {
 		t.Run("starting fen", func(t *testing.T) {
 			b := NewDefaultBoard()
@@ -1028,4 +1027,164 @@ func TestBoard(t *testing.T) {
 		}
 	})
 
+	t.Run("is legal move", func(t *testing.T) {
+		cases := []struct {
+			uci   string
+			legal bool
+		}{
+			{"e1g1", true},
+			{"g7g8r", true},
+			{"a5b5q", false},
+			{"h6h7n", false},
+			{"g7g8", false},
+		}
+
+		fen := "3k4/6P1/7P/8/K7/8/8/4R3 w - - 0 1"
+		b := NewBoardFromFEN(fen, false)
+
+		for _, c := range cases {
+			m, _ := NewMoveFromUci(c.uci)
+			if isInLegalMoves(m, &b) != c.legal {
+				t.Errorf("legal assertion failed: %v", c)
+			}
+		}
+
+		// Promote to pawn
+		var m *Move
+		m, _ = NewMoveFromUci("g7g8p")
+		if isInLegalMoves(m, &b) || isInPsuedoLegalMoves(m, &b) {
+			t.Errorf("expected not to be in legal/psuedo-legal moves")
+		}
+
+		// Promote to king
+		m, _ = NewMoveFromUci("g7g8k")
+		if isInLegalMoves(m, &b) || isInPsuedoLegalMoves(m, &b) {
+			t.Errorf("expected not to be in legal/psuedo-legal moves")
+		}
+
+		// FEN should match
+		if b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("FEN does not match")
+		}
+	})
+
+	t.Run("move count", func(t *testing.T) {
+		b := NewBoardFromFEN("1N2k3/P7/8/8/3n4/8/2PP4/R3K2R w KQ - 0 1", false)
+		count := 0
+		for range b.GeneratePseudoLegalMoves() {
+			count++
+		}
+
+		if count != 8+4+3+2+1+6+9 {
+			t.Errorf("Pseudo legal moves count not matching")
+		}
+	})
+
+	// TODO: Polyglot not yet ready (or may be this test shouldn't live here)
+	t.Run("polyglot", func(t *testing.T) {
+		t.Skip("Polyglot not yet implemented")
+	})
+
+	t.Run("castling move generation", func(t *testing.T) {
+		fen := "rnbqkbnr/2pp1ppp/8/4p3/2BPP3/P1N2N2/PB3PPP/2RQ1RK1 b kq - 1 10"
+		b := NewBoardFromFEN(fen, false)
+
+		var m *Move
+
+		// illegal move
+		m, _ = NewMoveFromUci("g1g2")
+		if isInLegalMoves(m, &b) || isInPsuedoLegalMoves(m, &b) {
+			t.Errorf("expected not to be in legal/psuedo-legal moves")
+		}
+
+		// Make a move
+		b.PushSan("exd4")
+
+		// Already castled short, can not castle long
+		m, _ = NewMoveFromUci("e1c1")
+		if isInLegalMoves(m, &b) || isInPsuedoLegalMoves(m, &b) {
+			t.Errorf("expected not to be in legal/psuedo-legal moves")
+		}
+
+		// Unmake the move
+		b.Pop()
+
+		// Generate all pseudo legal moves, two moves deep
+		for m1 := range b.GeneratePseudoLegalMoves() {
+			b.Push(&m1)
+			for m2 := range b.GeneratePseudoLegalMoves() {
+				b.Push(&m2)
+				b.Pop()
+			}
+			b.Pop()
+		}
+
+		// Check that the board is still consistent
+		if b.FEN(false, "legal", NoPiece) != fen ||
+			!b.baseBoard.kings.IsMaskingBB(BBG1) ||
+			!b.baseBoard.occupied.IsMaskingBB(BBG1) ||
+			!b.baseBoard.occupiedColor[White].IsMaskingBB(BBG1) ||
+			*(b.PieceAt(G1)) != NewPiece(King, White) ||
+			*(b.PieceAt(C1)) != NewPiece(Rook, White) {
+			t.Errorf("inconsistent board state")
+		}
+	})
+
+	t.Run("Move generation", func(t *testing.T) {
+		fen := "4kb1r/3b1ppp/8/1r2pNB1/6P1/pP2QP2/P6P/4R1K1 w k - 0 27"
+		b := NewBoardFromFEN(fen, false)
+
+		b.PushSan("Re2")
+
+		m, _ := NewMoveFromUci("e8f8")
+		if isInLegalMoves(m, &b) || isInPsuedoLegalMoves(m, &b) {
+			t.Errorf("expected not to be in legal/psuedo-legal moves")
+		}
+
+		// Generate all psuedo-legal moves
+		for m := range b.GeneratePseudoLegalMoves() {
+			b.Push(&m)
+			b.Pop()
+		}
+
+		// Unmake the move
+		b.Pop()
+
+		if b.FEN(false, "legal", NoPiece) != fen {
+			t.Errorf("FEN does not match")
+		}
+	})
+
+	t.Run("stateful move generation", func(t *testing.T) {
+		b := NewBoardFromFEN("r1b1k3/p2p1Nr1/n2b3p/3pp1pP/2BB1p2/P3P2R/Q1P3P1/R3K1N1 b Qq - 0 1", false)
+		count := 0
+		for m := range b.GenerateLegalMoves(BBAll, BBAll) {
+			b.Push(&m)
+			count++
+			b.Pop()
+		}
+
+		if count != 26 {
+			t.Errorf("Pseudo legal moves count not matching")
+		}
+	})
+
+	t.Run("960 castling", func(t *testing.T) {
+		b := NewBoardFromFEN("4r3/3k4/8/8/8/8/q5PP/1R1KR3 w Q - 2 2", true)
+		m, _ := NewMoveFromUci("d1b1")
+
+		if !b.IsCastling(m) ||
+			!isInPsuedoLegalMoves(m, &b) ||
+			!b.IsPseudoLegal(m) ||
+			!isInLegalMoves(m, &b) ||
+			!b.IsLegal(m) {
+			t.Errorf("960 castling failed")
+		}
+
+		m1, _ := b.parseSan("O-O-O+")
+		san := b.San(m1)
+		if *m1 != *m || san != "O-O-O+" {
+			t.Errorf("Moves not equal")
+		}
+	})
 }
