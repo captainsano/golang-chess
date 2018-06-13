@@ -845,7 +845,7 @@ func NewBoardFromBoard(b *Board) Board {
 	board.castlingRights = b.castlingRights
 	board.epSquare = b.epSquare
 	board.halfMoveClock = b.halfMoveClock
-	b.fullMoveNumber = b.fullMoveNumber
+	board.fullMoveNumber = b.fullMoveNumber
 
 	return board
 }

@@ -940,7 +940,74 @@ func TestBoard(t *testing.T) {
 
 	// @TODO: Write this test
 	t.Run("Variation SAN", func(t *testing.T) {
-		t.Skip("TODO: Write this test")
+		t.Run("starting fen", func(t *testing.T) {
+			b := NewDefaultBoard()
+			variation := []Move{}
+
+			for _, uci := range []string{"e2e4", "e7e5", "g1f3"} {
+				m, _ := NewMoveFromUci(uci)
+				variation = append(variation, *m)
+			}
+
+			san, err := b.VariationSan(variation)
+			if san != "1. e4 e5 2. Nf3" || err != nil {
+				if err != nil {
+					fmt.Println("Error: %v", err.Error())
+				}
+				t.Errorf("variation SAN not matching")
+			}
+		})
+
+		t.Run("custom fen", func(t *testing.T) {
+			fen := "rn1qr1k1/1p2bppp/p3p3/3pP3/P2P1B2/2RB1Q1P/1P3PP1/R5K1 w - - 0 19"
+			b := NewBoardFromFEN(fen, false)
+			variation := []Move{}
+
+			for _, uci := range []string{
+				"d3h7", "g8h7", "f3h5", "h7g8", "c3g3", "e7f8", "f4g5", "e8e7", "g5f6",
+				"b8d7", "h5h6", "d7f6", "e5f6", "g7g6", "f6e7", "f8e7",
+			} {
+				m, _ := NewMoveFromUci(uci)
+				variation = append(variation, *m)
+			}
+
+			sanW, err := b.VariationSan(variation)
+			if sanW != "19. Bxh7+ Kxh7 20. Qh5+ Kg8 21. Rg3 Bf8 22. Bg5 Re7 23. Bf6 Nd7 24. Qh6 Nxf6 25. exf6 g6 26. fxe7 Bxe7" || err != nil {
+				if err != nil {
+					t.Errorf("Variation SAN not matching, Error: %v", err.Error())
+				}
+				t.Errorf("variation SAN not matching")
+			}
+
+			if b.FEN(false, "legal", NoPiece) != fen {
+				t.Errorf("Fen should be unchanged")
+			}
+
+			b.Push(&variation[0])
+			sanB, err := b.VariationSan(variation[1:])
+			if sanB != "19...Kxh7 20. Qh5+ Kg8 21. Rg3 Bf8 22. Bg5 Re7 23. Bf6 Nd7 24. Qh6 Nxf6 25. exf6 g6 26. fxe7 Bxe7" || err != nil {
+				if err != nil {
+					t.Errorf("Variation SAN not matching, Error: %v", err.Error())
+				}
+				t.Errorf("variation SAN not matching")
+			}
+		})
+
+		t.Run("illegal variation", func(t *testing.T) {
+			fen := "rn1qr1k1/1p2bppp/p3p3/3pP3/P2P1B2/2RB1Q1P/1P3PP1/R5K1 w - - 0 19"
+			b := NewBoardFromFEN(fen, false)
+			variation := []Move{}
+
+			for _, uci := range []string{"d3h7", "g8h7", "f3h6", "h7g8"} {
+				m, _ := NewMoveFromUci(uci)
+				variation = append(variation, *m)
+			}
+
+			san, err := b.VariationSan(variation)
+			if err == nil || san != "" {
+				t.Errorf("Expected error")
+			}
+		})
 	})
 
 	t.Run("Move stack usage", func(t *testing.T) {
@@ -955,9 +1022,8 @@ func TestBoard(t *testing.T) {
 		b.PushUci("f8d6")
 		b.PushUci("e1h1")
 
-		fmt.Println("-- ", b.moveStack)
-
-		san, err := b.VariationSan(b.moveStack)
+		x := NewDefaultBoard()
+		san, err := x.VariationSan(b.moveStack)
 		if san != "1. d4 d5 2. Nf3 Bf5 3. e3 e6 4. Bd3 Bd6 5. O-O" || err != nil {
 			t.Errorf("Incorrect move stack: %v %v", san, err.Error())
 		}
