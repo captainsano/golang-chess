@@ -1187,4 +1187,93 @@ func TestBoard(t *testing.T) {
 			t.Errorf("Moves not equal")
 		}
 	})
+
+	t.Run("equality", func(t *testing.T) {
+		t.Run("default boards", func(t *testing.T) {
+			a, b := NewDefaultBoard(), NewDefaultBoard()
+			if !a.Equal(&b) {
+				t.Errorf("default boards are not equal")
+			}
+		})
+
+		t.Run("SAN", func(t *testing.T) {
+			a, b := NewDefaultBoard(), NewDefaultBoard()
+			a.PushSan("d4")
+			b.PushSan("d3")
+
+			if a.Equal(&b) {
+				t.Errorf("Expected boards to be unequal")
+			}
+		})
+	})
+
+	// TODO: write status test
+	t.Run("status", func(t *testing.T) {
+		b := NewDefaultBoard()
+		if b.Status() != StatusValid || !b.IsValid() {
+			t.Errorf("expected default status to be valid")
+		}
+
+		b.RemovePieceAt(H1)
+		if b.Status()&StatusBadCastlingRights == 0 {
+			t.Errorf("incorrect castling rights status")
+		}
+
+		b.RemovePieceAt(E8)
+		if b.Status()&StatusNoBlackKing == 0 {
+			t.Errorf("incorrect no black king status")
+		}
+
+		// The en passant square should be set even if no capture is actually
+		// possible.
+		b = NewDefaultBoard()
+		b.PushSan("e4")
+
+		if b.epSquare != E3 || b.Status() != StatusValid {
+			t.Errorf("enpassant square must be set")
+		}
+
+		// But there must indeed be a pawn there
+		b.RemovePieceAt(E4)
+		if b.Status() != StatusInvalidEpSquare {
+			t.Errorf("enpassant status incorrect")
+		}
+
+		// King must be between the two rooks
+		b = NewBoardFromFEN("2rrk3/8/8/8/8/8/3PPPPP/2RK4 w cd - 0 1", false)
+		if b.Status() != StatusBadCastlingRights {
+			t.Errorf("status castling rights incorrect")
+		}
+
+		// Generally valid position but not valid standard chess position due to non-standard castling rights.
+		// Chess960 start position #0
+		b = NewBoardFromFEN("bbqnnrkr/pppppppp/8/8/8/8/PPPPPPPP/BBQNNRKR w KQkq - 0 1", true)
+		if b.Status() != StatusValid {
+			t.Errorf("expected status to be valid")
+		}
+		b = NewBoardFromFEN("bbqnnrkr/pppppppp/8/8/8/8/PPPPPPPP/BBQNNRKR w KQkq - 0 1", false)
+		if b.Status() != StatusBadCastlingRights {
+			t.Errorf("expected bad castling rights status")
+		}
+	})
+
+	t.Run("one king movegen", func(t *testing.T) {
+		b := NewBoard(false)
+		p := NewPiece(King, White)
+		b.SetPieceAt(A1, &p, false)
+
+		if b.IsValid() || b.LegalMovesCount() != 3 || b.PseudoLegalMovesCount() != 3 {
+			t.Errorf("expected board to be invalid and legal moves count to 3")
+		}
+
+		b.PushSan("Kb1")
+		if b.LegalMovesCount() != 0 || b.PseudoLegalMovesCount() != 0 {
+			t.Errorf("expected legal moves count to 0")
+		}
+
+		b.PushSan("--")
+		if b.LegalMovesCount() != 5 || b.PseudoLegalMovesCount() != 5 {
+			t.Errorf("expected legal moves count to 5")
+		}
+	})
 }

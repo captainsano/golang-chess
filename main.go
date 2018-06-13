@@ -50,16 +50,14 @@ func printStatus(b *Board) {
 }
 
 func main() {
-	fen := "8/8/8/R2nkn2/8/8/2K5/8 b - - 0 1"
-	b := NewBoardFromFEN(fen, false)
+	fmt.Println("--> ", StatusValid)
+	fmt.Println("--> ", StatusNoWhiteKing)
+	fmt.Println("--> ", StatusNoBlackKing)
+	fmt.Println("--> ", StatusTooManyKings)
+	fmt.Println("--> ", StatusTooManyWhitePawns)
+	fmt.Println("--> ", StatusTooManyBlackPawns)
+	fmt.Println("--> ", StatusPawnsOnBackRank)
+	fmt.Println("--> ", StatusTooManyWhitePieces)
+	fmt.Println("--> ", StatusRaceMaterial)
 
-	m1, _ := NewMoveFromUci("f5e3")
-	b.Push(m1)
-
-	fmt.Println("Current position:")
-	fmt.Println(b)
-
-	for m := range b.GenerateLegalMoves(BBAll, BBAll) {
-		fmt.Println("--> Legal Move: ", m.Uci())
-	}
 }

@@ -15,6 +15,25 @@ const (
 	FENCastlingRegexString = "^(?:-|[KQABCDEFGH]{0,2}[kqabcdefgh]{0,2})"
 )
 
+const StatusValid uint = 0
+const (
+	StatusNoWhiteKing uint = 1 << iota
+	StatusNoBlackKing
+	StatusTooManyKings
+	StatusTooManyWhitePawns
+	StatusTooManyBlackPawns
+	StatusPawnsOnBackRank
+	StatusTooManyWhitePieces
+	StatusTooManyBlackPieces
+	StatusBadCastlingRights
+	StatusInvalidEpSquare
+	StatusOppositeCheck
+	StatusEmpty
+	StatusRaceCheck
+	StatusRaceOver
+	StatusRaceMaterial
+)
+
 type BaseBoard struct {
 	pawns   Bitboard
 	knights Bitboard
@@ -2453,9 +2472,95 @@ func (b *Board) HasChess960CastlingRights() bool {
 	return false
 }
 
-// TODO: Status
-func (b *Board) Status() uint64 {
-	return 0
+func (b *Board) Status() uint {
+	errors := StatusValid
+
+	// There must be at least one piece
+	if b.baseBoard.occupied == BBVoid {
+		errors |= StatusEmpty
+	}
+
+	// There must be exactly one king of each color
+	if !b.baseBoard.occupiedColor[White].IsMaskingBB(b.baseBoard.kings) {
+		errors |= StatusNoWhiteKing
+	}
+	if !b.baseBoard.occupiedColor[Black].IsMaskingBB(b.baseBoard.kings) {
+		errors |= StatusNoBlackKing
+	}
+	if (b.baseBoard.occupied & b.baseBoard.kings).PopCount() > 2 {
+		errors |= StatusTooManyKings
+	}
+
+	// There can not be more than 16 pieces of any color.
+	if b.baseBoard.occupiedColor[White].PopCount() > 16 {
+		errors |= StatusTooManyWhitePieces
+	}
+	if b.baseBoard.occupiedColor[Black].PopCount() > 16 {
+		errors |= StatusTooManyBlackPieces
+	}
+
+	// There can not be more than 8 pawns of any color
+	if (b.baseBoard.occupiedColor[White] & b.baseBoard.pawns).PopCount() > 8 {
+		errors |= StatusTooManyWhitePawns
+	}
+	if (b.baseBoard.occupiedColor[Black] & b.baseBoard.pawns).PopCount() > 8 {
+		errors |= StatusTooManyBlackPawns
+	}
+
+	// Pawns can not be on backrank
+	if b.baseBoard.pawns.IsMaskingBB(BBBackRanks) {
+		errors |= StatusPawnsOnBackRank
+	}
+
+	// Castling rights
+	if b.castlingRights != b.CleanCastlingRights() {
+		errors |= StatusBadCastlingRights
+	}
+
+	// En Passant
+	if b.epSquare != b.validEpSquare() {
+		errors |= StatusInvalidEpSquare
+	}
+
+	return errors
+}
+
+func (b *Board) validEpSquare() Square {
+	if b.epSquare != SquareNone {
+		epRank, pawnMask, seventhRankMask := Rank(0), NewBitboardFromSquare(b.epSquare), NewBitboardFromSquare(b.epSquare)
+		if b.turn == White {
+			epRank = 5
+			pawnMask.ShiftDown()
+			seventhRankMask.ShiftUp()
+		} else {
+			epRank = 2
+			pawnMask.ShiftUp()
+			seventhRankMask.ShiftDown()
+		}
+
+		// The en passant square must be on the third or sixth rank
+		if b.epSquare.Rank() != epRank {
+			return SquareNone
+		}
+
+		// The last move must have been a double pawn push, so there must
+		// be a pawn of the correct color on the fourth or fifth rank.
+		if b.baseBoard.pawns&b.baseBoard.occupiedColor[b.turn.Swap()]&pawnMask == BBVoid {
+			return SquareNone
+		}
+
+		// And the en passant square must be empty
+		if b.baseBoard.occupied.IsMaskingBB(NewBitboardFromSquare(b.epSquare)) {
+			return SquareNone
+		}
+
+		// And the second rank must be empty
+		if b.baseBoard.occupied.IsMaskingBB(seventhRankMask) {
+			return SquareNone
+		}
+	}
+
+	return b.epSquare
 }
 
 func (b *Board) isSafe(king Square, blockers Bitboard, move *Move) bool {
@@ -2470,6 +2575,11 @@ func (b *Board) isSafe(king Square, blockers Bitboard, move *Move) bool {
 	}
 
 	return !blockers.IsMaskingBB(NewBitboardFromSquare(move.FromSquare)) || bbRays[move.FromSquare][move.ToSquare].IsMaskingBB(NewBitboardFromSquare(king))
+}
+
+// TODO: Use status
+func (b *Board) IsValid() bool {
+	return b.Status() == StatusValid
 }
 
 func (b *Board) epSkewered(kingSquare, capturer Square) bool {
@@ -2813,6 +2923,22 @@ func (b *Board) transpositionKey() string {
 		b.CleanCastlingRights(),
 		b.epSquare,
 	)
+}
+
+func (b *Board) LegalMovesCount() int {
+	count := 0
+	for range b.GenerateLegalMoves(BBAll, BBAll) {
+		count++
+	}
+	return count
+}
+
+func (b *Board) PseudoLegalMovesCount() int {
+	count := 0
+	for range b.GeneratePseudoLegalMoves() {
+		count++
+	}
+	return count
 }
 
 func (b Board) String() string {
