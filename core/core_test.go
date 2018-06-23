@@ -657,29 +657,28 @@ func TestBoard(t *testing.T) {
 		}
 	})
 
-	// TODO: Status
-	// t.Run("invalid castling rights", func(t *testing.T) {
-	// 	// KQkq is not valid in this standard chess position.
-	// 	b := NewBoardFromFEN("1r2k3/8/8/8/8/8/8/R3KR2 w KQkq - 0 1", false)
-	// 	if b.Status() != StatusBadCastlingRights ||
-	// 		b.FEN(false, "legal", NoPiece) != "1r2k3/8/8/8/8/8/8/R3KR2 w Q - 0 1" ||
-	// 		!b.HasQueensideCastlingRights(White) ||
-	// 		b.HasKingsideCastlingRights(White) ||
-	// 		b.HasQueensideCastlingRights(Black) ||
-	// 		b.HasKingsideCastlingRights(Black) {
-	// 		t.Error("castling rights failed")
-	// 	}
+	t.Run("invalid castling rights", func(t *testing.T) {
+		// KQkq is not valid in this standard chess position.
+		b := NewBoardFromFEN("1r2k3/8/8/8/8/8/8/R3KR2 w KQkq - 0 1", false)
+		if b.Status() != StatusBadCastlingRights ||
+			b.FEN(false, "legal", NoPiece) != "1r2k3/8/8/8/8/8/8/R3KR2 w Q - 0 1" ||
+			!b.HasQueensideCastlingRights(White) ||
+			b.HasKingsideCastlingRights(White) ||
+			b.HasQueensideCastlingRights(Black) ||
+			b.HasKingsideCastlingRights(Black) {
+			t.Error("castling rights failed")
+		}
 
-	// 	b = NewBoardFromFEN("4k2r/8/8/8/8/8/8/R1K5 w KQkq - 0 1", true)
-	// 	if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "4k2r/8/8/8/8/8/8/R1K5 w Qk - 0 1" {
-	// 		t.Error("castling rights failed")
-	// 	}
+		b = NewBoardFromFEN("4k2r/8/8/8/8/8/8/R1K5 w KQkq - 0 1", true)
+		if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "4k2r/8/8/8/8/8/8/R1K5 w Qk - 0 1" {
+			t.Error("castling rights failed")
+		}
 
-	// 	b = NewBoardFromFEN("1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQkq - 0 1", true)
-	// 	if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQq - 0 1" {
-	// 		t.Error("castling rights failed")
-	// 	}
-	// })
+		b = NewBoardFromFEN("1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQkq - 0 1", true)
+		if b.Status() != StatusBadCastlingRights || b.FEN(false, "legal", NoPiece) != "1r2k3/8/1p6/8/8/5P2/8/1R2KR2 w KQq - 0 1" {
+			t.Error("castling rights failed")
+		}
+	})
 
 	t.Run("960 different king and rook file", func(t *testing.T) {
 		// Theoretically this position (with castling rights) can not be reached
@@ -1207,7 +1206,6 @@ func TestBoard(t *testing.T) {
 		})
 	})
 
-	// TODO: write status test
 	t.Run("status", func(t *testing.T) {
 		b := NewDefaultBoard()
 		if b.Status() != StatusValid || !b.IsValid() {
